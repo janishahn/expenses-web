@@ -1,22 +1,28 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import Optional
+import logging
+import math
+import os
+import shutil
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Optional, List
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from weasyprint import HTML, CSS
+from weasyprint.text.fonts import FontConfiguration
 
-from config import get_settings
 from csv_utils import parse_amount
 from csrf import generate_csrf_token, validate_csrf_token
 from database import SessionLocal
 from models import IntervalUnit, MonthDayPolicy, TransactionKind, TransactionType
 from periods import Period, resolve_period
 from scheduler import SchedulerManager
-from schemas import CategoryIn, RecurringRuleIn, TransactionIn
+from schemas import CategoryIn, RecurringRuleIn, TransactionIn, ReportOptions
 from services import (
     CSVService,
     CategoryService,
@@ -24,6 +30,7 @@ from services import (
     RecurringRuleService,
     TransactionFilters,
     TransactionService,
+    ReportService,
 )
 
 app = FastAPI(title="Expense Tracker")
@@ -31,11 +38,15 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-def format_currency(cents: int) -> str:
-    return f"{cents / 100:,.2f}".replace(",", " ").replace(".", ",")
+def format_currency(cents: int, options: Optional[dict] = None) -> str:
+    include_cents = options.get("include_cents", True) if options else True
+    if include_cents:
+        return f"{cents / 100:,.2f}".replace(",", " ").replace(".", ",")
+    return f"{cents / 100:,.0f}".replace(",", " ")
 
 
 templates.env.filters["currency"] = format_currency
+templates.env.globals["math"] = math
 templates.env.globals["TransactionType"] = TransactionType
 templates.env.globals["IntervalUnit"] = IntervalUnit
 templates.env.globals["MonthDayPolicy"] = MonthDayPolicy
@@ -463,10 +474,195 @@ async def import_commit(
     return Response(status_code=200, content=f"Imported {count} rows.", headers=headers)
 
 
+@app.post("/reports/pdf")
+async def generate_pdf_report(
+    request: Request,
+    start: str = Form(...),
+    end: str = Form(...),
+    sections: List[str] = Form(["summary", "kpis", "category_breakdown", "recent_transactions"]),
+    currency_symbol: str = Form("€"),
+    page_size: str = Form("A4"),
+    include_cents: bool = Form(True),
+    recent_transactions_count: int = Form(50),
+    notes: Optional[str] = Form(None),
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if not validate_csrf_token(csrf_token):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+
+    try:
+        options = ReportOptions(
+            start=date.fromisoformat(start),
+            end=date.fromisoformat(end),
+            sections=[s.strip() for s in sections],
+            currency_symbol=currency_symbol,
+            page_size=page_size,
+            include_cents=include_cents,
+            recent_transactions_count=recent_transactions_count,
+            notes=notes,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        start_time = datetime.now()
+        report_service = ReportService(db)
+        data = report_service.gather_data(options)
+        gather_duration = (datetime.now() - start_time).total_seconds()
+        logging.info(
+            f"report_generated: period={options.start}to{options.end} "
+            f"sections={len(options.sections)} "
+            f"data_gather_duration={gather_duration:.2f}s"
+        )
+
+        font_config = FontConfiguration()
+        html = templates.env.get_template("report.html").render(**data)
+        css = CSS(string="""
+            @page {
+                size: A4;
+                margin: 2cm;
+            }
+            body {
+                font-family: Arial, sans-serif;
+                font-size: 10pt;
+                color: #333;
+            }
+            h1, h2, h3 {
+                color: #222;
+            }
+            .section {
+                margin-bottom: 20px;
+                page-break-inside: avoid;
+            }
+            .kpi-grid {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+            .kpi-card {
+                border: 1px solid #ddd;
+                padding: 10px;
+                border-radius: 4px;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 10px;
+            }
+            th, td {
+                border: 1px solid #ddd;
+                padding: 6px;
+                text-align: left;
+            }
+            th {
+                background-color: #f5f5f5;
+            }
+            .donut-chart {
+                margin: 20px 0;
+            }
+        """, font_config=font_config)
+
+        start_time = datetime.now()
+        pdf_bytes = HTML(string=html, base_url=str(request.base_url)).write_pdf(
+            stylesheets=[css],
+            font_config=font_config
+        )
+        pdf_duration = (datetime.now() - start_time).total_seconds()
+        logging.info(
+            f"report_generated: period={options.start}to{options.end} "
+            f"pdf_size_bytes={len(pdf_bytes)} "
+            f"pdf_duration={pdf_duration:.2f}s"
+        )
+
+        filename = f"expense_report_{start}_{end}.pdf"
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(pdf_bytes)),
+            },
+        )
+    except Exception as exc:
+        logging.exception("Error generating PDF report")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/admin/download-db", response_class=StreamingResponse)
+def download_database(db: Session = Depends(get_db)):
+    db_path = Path("data/expenses.db")
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="Database not found")
+
+    def file_generator():
+        with open(db_path, "rb") as f:
+            shutil.copyfileobj(f, os.fdopen(os.dup(f.fileno()), "rb"))
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"expenses_backup_{timestamp}.db"
+    return StreamingResponse(
+        iter([open(db_path, "rb").read()]),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/admin/export-csv")
+def export_all_transactions(
+    request: Request,
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if not validate_csrf_token(csrf_token):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+
+    transactions = TransactionService(db).recent(limit=10000)
+    csv_text = CSVService(db).export(transactions)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"expenses_export_{timestamp}.csv"
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/admin/purge-deleted")
+def purge_deleted_transactions(
+    csrf_token: str = Form(...),
+    days: int = Form(30),
+    db: Session = Depends(get_db),
+):
+    if not validate_csrf_token(csrf_token):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    from sqlalchemy import delete
+    from models import Transaction
+    stmt = delete(Transaction).where(
+        Transaction.deleted_at.isnot(None),
+        Transaction.deleted_at < cutoff_date
+    )
+    result = db.execute(stmt)
+    db.commit()
+    logging.info(f"Purged {result.rowcount} deleted transactions older than {days} days")
+    return Response(
+        status_code=200,
+        content=f"Purged {result.rowcount} transactions",
+        headers={"HX-Trigger": "transactions-changed"}
+    )
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request):
+    return render(request, "admin.html", {})
+
+
 def main():
     import uvicorn
 
-    settings = get_settings()
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
 
 

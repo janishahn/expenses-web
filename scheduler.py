@@ -20,11 +20,11 @@ class SchedulerManager:
         self.scheduler = BackgroundScheduler(timezone=settings.timezone)
 
     def _run_job(self, source: str = "manual") -> None:
-        logger.info(f"Running recurring rule catch-up from {source}")
+        logger.info(f"scheduler_run: source={source}")
         with session_scope() as session:
             service = RecurringRuleService(session)
             count = service.catch_up_all()
-            logger.info(f"Posted {count} occurrences from scheduler")
+            logger.info(f"scheduler_run: source={source} occurrences_posted={count}")
 
     def start(self) -> None:
         self._run_job("startup")

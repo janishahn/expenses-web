@@ -7,11 +7,10 @@ Create Date: 2024-11-11 00:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'add_kind_to_transactions'
-down_revision = None
+down_revision = "202405291200"
 branch_labels = None
 depends_on = None
 

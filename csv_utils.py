@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import StringIO
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from models import Transaction, TransactionKind, TransactionType
 from schemas import CSVRow

@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from models import IntervalUnit, MonthDayPolicy, TransactionKind, TransactionType
+
+
+class ReportOptions(BaseModel):
+    start: date
+    end: date
+    sections: list[str] = Field(default_factory=lambda: ["summary", "kpis", "category_breakdown", "recent_transactions"])
+    currency_symbol: str = "€"
+    page_size: str = "A4"
+    include_cents: bool = True
+    recent_transactions_count: int = 50
+    notes: Optional[str] = None
 
 
 class CategoryIn(BaseModel):

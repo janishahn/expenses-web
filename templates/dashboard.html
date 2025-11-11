@@ -79,7 +79,82 @@
     hx-trigger="load, transactions-changed from:body, dateRangeChanged from:#date-range-picker"
     hx-swap="outerHTML"
     hx-include="#date-range-form">
-    {% include "components/transaction_list.html" with transactions=recent %}
+    {% include "components/transaction_list.html" %}
+</div>
+
+<div style="margin-top: 2rem; text-align: center;">
+    <button class="button" onclick="document.getElementById('report-modal').style.display='block'">Generate PDF Report</button>
+</div>
+
+<div id="report-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 2rem; border-radius: 8px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;">
+        <h2 style="margin-bottom: 1rem;">Generate PDF Report</h2>
+        <form id="report-form" method="post" action="/reports/pdf" target="_blank">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="start" value="{{ period.start }}">
+            <input type="hidden" name="end" value="{{ period.end }}">
+
+            <div style="margin-bottom: 1rem;">
+                <label>Period: {{ period.start }} to {{ period.end }}</label>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <label>Sections to include:</label>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-top: 0.5rem;">
+                    <label style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" name="sections" value="summary" checked> Summary
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" name="sections" value="kpis" checked> KPIs
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" name="sections" value="category_breakdown" checked> Category Breakdown
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" name="sections" value="top_categories"> Top Categories
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" name="sections" value="trend"> Trend Line
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" name="sections" value="recent_transactions" checked> Recent Transactions
+                    </label>
+                    <label style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" name="sections" value="recurring_upcoming"> Upcoming Recurring
+                    </label>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <label>Currency Symbol
+                    <input type="text" name="currency_symbol" value="€" style="margin-left: 0.5rem; width: 50px;">
+                </label>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <label style="display:flex; align-items:center; gap:0.5rem;">
+                    <input type="checkbox" name="include_cents" value="true" checked> Include cents
+                </label>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <label>Recent Transactions Count
+                    <input type="number" name="recent_transactions_count" value="50" min="1" max="200" style="margin-left: 0.5rem; width: 100px;">
+                </label>
+            </div>
+
+            <div style="margin-bottom: 1rem;">
+                <label>Notes (optional)
+                    <textarea name="notes" rows="3" style="margin-left: 0.5rem; width: 100%; margin-top: 0.5rem;"></textarea>
+                </label>
+            </div>
+
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button type="button" class="button secondary" onclick="document.getElementById('report-modal').style.display='none'">Cancel</button>
+                <button type="submit" class="button">Generate PDF</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <div style="position: fixed; bottom: 2rem; right: 2rem; z-index: 100;">
@@ -87,6 +162,7 @@
 </div>
 
 <script type="text/babel">
+{% raw %}
     const { useState, useEffect } = React;
 
     function DateRangePicker() {
@@ -165,5 +241,6 @@
     if (container) {
         ReactDOM.render(<DateRangePicker />, container);
     }
+{% endraw %}
 </script>
 {% endblock %}

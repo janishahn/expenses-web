@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -9,8 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import IntervalUnit, MonthDayPolicy, RecurringRule, Transaction, TransactionType, TransactionKind
-from services import update_monthly_rollup
+from models import IntervalUnit, MonthDayPolicy, RecurringRule, Transaction, TransactionKind
 
 
 def local_today() -> date:
@@ -120,6 +118,8 @@ class RecurringEngine:
         return count
 
     def _post_occurrence(self, rule: RecurringRule, occurrence_date: date) -> bool:
+        from services import update_monthly_rollup
+
         exists_stmt = (
             select(Transaction.id)
             .where(

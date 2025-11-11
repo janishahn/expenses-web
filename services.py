@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
-from typing import Iterable, Optional
+from datetime import date, datetime, timedelta
+from typing import Optional
 
-from sqlalchemy import and_, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from models import (
     Category,
-    IntervalUnit,
-    MonthDayPolicy,
     MonthlyRollup,
     RecurringRule,
     Transaction,
@@ -21,7 +18,7 @@ from models import (
 from periods import Period
 from recurrence import RecurringEngine
 from csv_utils import export_transactions, parse_csv
-from schemas import CategoryIn, RecurringRuleIn, TransactionIn
+from schemas import CategoryIn, RecurringRuleIn, TransactionIn, ReportOptions
 
 
 def update_monthly_rollup(session: Session, user_id: int, txn_date: date, txn_type: TransactionType, amount_cents: int, increment: bool = True) -> None:
@@ -421,3 +418,70 @@ class CSVService:
 
     def export(self, transactions: list[Transaction]) -> str:
         return export_transactions(transactions)
+
+
+class ReportService:
+    def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
+        self.session = session
+        self.user_id = user_id or get_current_user_id()
+        self.metrics_service = MetricsService(session, self.user_id)
+        self.txn_service = TransactionService(session, self.user_id)
+        self.rule_service = RecurringRuleService(session, self.user_id)
+
+    def gather_data(self, options: ReportOptions) -> dict[str, object]:
+        period = Period(options.start, options.end)
+        data: dict[str, object] = {
+            "period": period,
+            "options": options,
+        }
+
+        if "summary" in options.sections:
+            kpis = self.metrics_service.kpis(period)
+            data["summary"] = {
+                "period": period,
+                "total_income": kpis["income"],
+                "total_expenses": kpis["expenses"],
+                "balance": kpis["balance"],
+            }
+
+        if "kpis" in options.sections:
+            data["kpis"] = self.metrics_service.kpis(period)
+
+        if "category_breakdown" in options.sections:
+            breakdown = self.metrics_service.category_breakdown(period)
+            data["category_breakdown"] = breakdown
+
+        if "top_categories" in options.sections:
+            breakdown = self.metrics_service.category_breakdown(period)
+            data["top_categories"] = breakdown[:5]
+
+        if "trend" in options.sections:
+            stmt = (
+                select(Transaction.date, func.sum(Transaction.amount_cents))
+                .where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.deleted_at.is_(None),
+                    Transaction.type == TransactionType.expense,
+                    Transaction.date.between(options.start, options.end),
+                )
+                .group_by(Transaction.date)
+                .order_by(Transaction.date)
+            )
+            rows = self.session.execute(stmt).all()
+            trend = [{"date": row[0], "amount_cents": row[1] or 0} for row in rows]
+            data["trend"] = trend
+
+        if "recent_transactions" in options.sections:
+            filters = TransactionFilters()
+            transactions = self.txn_service.list(period, filters, limit=options.recent_transactions_count)
+            data["recent_transactions"] = transactions
+
+        if "recurring_upcoming" in options.sections:
+            end_date = options.end + timedelta(days=30)
+            upcoming_rules = []
+            for rule in self.rule_service.list():
+                if rule.auto_post and rule.next_occurrence <= end_date:
+                    upcoming_rules.append(rule)
+            data["recurring_upcoming"] = upcoming_rules
+
+        return data

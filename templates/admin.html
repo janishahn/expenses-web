@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Admin</h1>
+
+<section style="margin-top: 2rem;">
+    <h2>Backups</h2>
+    <p>Download a backup of your database.</p>
+    <a href="/admin/download-db" class="button">Download Database Backup</a>
+</section>
+
+<section style="margin-top: 2rem;">
+    <h2>Export Data</h2>
+    <p>Export all transactions as CSV.</p>
+    <form method="post" action="/admin/export-csv" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="button">Export CSV</button>
+    </form>
+</section>
+
+<section style="margin-top: 2rem;">
+    <h2>Housekeeping</h2>
+    <p>Purge soft-deleted transactions older than the specified number of days.</p>
+    <form method="post" action="/admin/purge-deleted" style="display: inline;" hx-post="/admin/purge-deleted" hx-swap="none">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Days: <input type="number" name="days" value="30" min="1" max="365" style="width: 100px;"></label>
+        <button type="submit" class="button" onclick="return confirm('Are you sure? This action cannot be undone.')">Purge Deleted</button>
+    </form>
+</section>
+{% endblock %}
