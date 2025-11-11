@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import IntervalUnit, MonthDayPolicy, RecurringRule, Transaction
+from models import IntervalUnit, MonthDayPolicy, RecurringRule, Transaction, TransactionType, TransactionKind
+from services import update_monthly_rollup
 
 
 def local_today() -> date:
@@ -86,7 +87,9 @@ class RecurringEngine:
 
     def catch_up_rule(self, rule: RecurringRule, today: Optional[date] = None) -> None:
         today = today or local_today()
-        while rule.next_occurrence <= today:
+        iterations = 0
+        max_iterations = 365
+        while rule.next_occurrence <= today and iterations < max_iterations:
             if rule.end_date and rule.next_occurrence > rule.end_date:
                 break
             occurrence_date = rule.next_occurrence
@@ -95,6 +98,7 @@ class RecurringEngine:
             rule.next_occurrence = next_date
             if not posted and occurrence_date == next_date:
                 break
+            iterations += 1
 
     def post_due_rules(self, today: Optional[date] = None) -> int:
         today = today or local_today()
@@ -138,6 +142,8 @@ class RecurringEngine:
             origin_rule_id=rule.id,
             occurrence_date=occurrence_date,
             note=rule.name,
+            kind=TransactionKind.normal,
         )
         self.session.add(txn)
+        update_monthly_rollup(self.session, rule.user_id, occurrence_date, rule.type, rule.amount_cents, increment=True)
         return True

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+    <h1>Posted Occurrences for {{ rule.name or "Rule #" + rule.id|string }}</h1>
+    <div>
+        <a href="/recurring" class="button secondary">← Back to Recurring</a>
+    </div>
+</header>
+
+<section>
+    <h3>Rule Details</h3>
+    <table>
+        <tr>
+            <th>Name</th>
+            <td>{{ rule.name or "-" }}</td>
+        </tr>
+        <tr>
+            <th>Type</th>
+            <td>{{ rule.type.value }}</td>
+        </tr>
+        <tr>
+            <th>Amount</th>
+            <td>{{ rule.amount_cents|currency }} €</td>
+        </tr>
+        <tr>
+            <th>Category</th>
+            <td>{{ rule.category.name if rule.category else "-" }}</td>
+        </tr>
+        <tr>
+            <th>Schedule</th>
+            <td>Every {{ rule.interval_count }} {{ rule.interval_unit.value }}{% if rule.interval_count > 1 %}s{% endif %}</td>
+        </tr>
+        <tr>
+            <th>Next Occurrence</th>
+            <td>{{ rule.next_occurrence }}</td>
+        </tr>
+        <tr>
+            <th>Auto Post</th>
+            <td>{{ "Yes" if rule.auto_post else "No" }}</td>
+        </tr>
+    </table>
+</section>
+
+<section>
+    <h3>Posted Transactions ({{ occurrences|length }})</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Category</th>
+                <th>Note</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for txn in occurrences %}
+            <tr>
+                <td>{{ txn.occurrence_date }}</td>
+                <td>{{ txn.amount_cents|currency }} €</td>
+                <td>{{ txn.category.name if txn.category else "-" }}</td>
+                <td>{{ txn.note or "" }}</td>
+                <td>{{ txn.created_at }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5">No occurrences posted yet.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

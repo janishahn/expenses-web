@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from io import StringIO
 from typing import Iterable, Sequence
 
-from models import Transaction, TransactionType
+from models import Transaction, TransactionKind, TransactionType
 from schemas import CSVRow
 
 
@@ -44,6 +44,8 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
             date_value = parse_date((raw.get("Date") or "").strip())
             type_raw = (raw.get("Type") or "").strip().lower()
             type_value = TransactionType(type_raw)
+            kind_raw = (raw.get("Kind") or "normal").strip().lower()
+            kind_value = TransactionKind(kind_raw) if kind_raw in ["normal", "adjustment"] else TransactionKind.normal
             amount_value = parse_amount(raw.get("Amount") or "0")
             category = (raw.get("Category") or "").strip()
             note_raw = raw.get("Note")
@@ -52,6 +54,7 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
                 CSVRow(
                     date=date_value,
                     type=type_value,
+                    kind=kind_value,
                     amount_cents=amount_value,
                     category=category,
                     note=note,
@@ -65,12 +68,13 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
 def export_transactions(transactions: Sequence[Transaction]) -> str:
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Type", "Amount", "Category", "Note"])
+    writer.writerow(["Date", "Type", "Kind", "Amount", "Category", "Note"])
     for txn in transactions:
         writer.writerow(
             [
                 txn.date.isoformat(),
                 txn.type.value,
+                txn.kind.value if hasattr(txn, 'kind') else 'normal',
                 f"{txn.amount_cents / 100:.2f}",
                 txn.category.name if txn.category else "",
                 txn.note or "",

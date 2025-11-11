@@ -13,7 +13,7 @@ from config import get_settings
 from csv_utils import parse_amount
 from csrf import generate_csrf_token, validate_csrf_token
 from database import SessionLocal
-from models import IntervalUnit, MonthDayPolicy, TransactionType
+from models import IntervalUnit, MonthDayPolicy, TransactionKind, TransactionType
 from periods import Period, resolve_period
 from scheduler import SchedulerManager
 from schemas import CategoryIn, RecurringRuleIn, TransactionIn
@@ -187,9 +187,12 @@ async def create_transaction(request: Request, db: Session = Depends(get_db)):
     if not validate_csrf_token(token):
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
     try:
+        kind_value = form.get("kind", "normal")
+        kind = TransactionKind(kind_value) if kind_value in ["normal", "adjustment"] else TransactionKind.normal
         data = TransactionIn(
             date=date.fromisoformat(form["date"]),
             type=TransactionType(form["type"]),
+            kind=kind,
             amount_cents=parse_amount(form["amount"]),
             category_id=int(form["category_id"]),
             note=form.get("note"),
@@ -313,6 +316,79 @@ async def update_recurring(rule_id: int, request: Request, db: Session = Depends
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return RedirectResponse(url=request.url_for("recurring_page"), status_code=303)
+
+
+@app.get("/recurring/{rule_id}/occurrences", response_class=HTMLResponse)
+def recurring_occurrences(rule_id: int, request: Request, db: Session = Depends(get_db)):
+    service = RecurringRuleService(db)
+    try:
+        rule = service.get(rule_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    from sqlalchemy import select
+    from models import Transaction
+
+    stmt = (
+        select(Transaction)
+        .where(
+            Transaction.origin_rule_id == rule_id,
+            Transaction.deleted_at.is_(None),
+        )
+        .order_by(Transaction.occurrence_date.desc())
+    )
+    occurrences = db.scalars(stmt).all()
+
+    return render(
+        request,
+        "recurring_occurrences.html",
+        {"rule": rule, "occurrences": occurrences},
+    )
+
+
+@app.get("/api/kpis")
+def api_kpis(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    metrics = MetricsService(db).kpis(period)
+    return metrics
+
+
+@app.get("/api/category-breakdown")
+def api_category_breakdown(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    data = MetricsService(db).category_breakdown(period)
+    return data
+
+
+@app.get("/api/transactions")
+def api_transactions(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    page = int(request.query_params.get("page", "1"))
+    page = max(page, 1)
+    limit = int(request.query_params.get("limit", "50"))
+    limit = min(max(limit, 1), 100)
+    offset = (page - 1) * limit
+    txn_service = TransactionService(db)
+    items = txn_service.list(period, filters, limit=limit, offset=offset)
+
+    return {
+        "items": [
+            {
+                "id": txn.id,
+                "date": txn.date.isoformat(),
+                "type": txn.type.value,
+                "kind": txn.kind.value if hasattr(txn, 'kind') else 'normal',
+                "amount_cents": txn.amount_cents,
+                "category": txn.category.name if txn.category else None,
+                "note": txn.note,
+            }
+            for txn in items
+        ],
+        "page": page,
+        "limit": limit,
+        "has_more": len(items) == limit,
+    }
 
 
 @app.get("/components/kpis", response_class=HTMLResponse)

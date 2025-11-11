@@ -1,29 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
-<header>
-    <h1>Dashboard</h1>
+<div style="position: sticky; top: 0; background: white; z-index: 100; padding: 1rem 0; border-bottom: 1px solid #e5e5e5; margin-bottom: 1rem;">
+    <h1 style="margin-bottom: 1rem;">Dashboard</h1>
     <div>
-        <form method="get" class="grid two">
+        <div id="date-range-picker">
+            <div id="date-range-container"></div>
+        </div>
+        <form id="date-range-form" method="get" style="display:none;">
             <input type="hidden" name="start" value="{{ period.start }}">
             <input type="hidden" name="end" value="{{ period.end }}">
-            <button class="button secondary" name="period" value="this_month">This Month</button>
-            <button class="button secondary" name="period" value="last_month">Last Month</button>
         </form>
+        <noscript>
+            <form method="get" class="grid two" style="margin-top: 0.5rem;">
+                <input type="hidden" name="start" value="{{ period.start }}">
+                <input type="hidden" name="end" value="{{ period.end }}">
+                <button class="button secondary" name="period" value="this_month">This Month</button>
+                <button class="button secondary" name="period" value="last_month">Last Month</button>
+            </form>
+        </noscript>
     </div>
-</header>
+</div>
 
 <section id="kpi-panel"
-    hx-get="/components/kpis?{{ period_query }}"
-    hx-trigger="load, transactions-changed from:body"
-    hx-swap="outerHTML">
+    hx-get="/components/kpis"
+    hx-trigger="load, transactions-changed from:body, dateRangeChanged from:#date-range-picker"
+    hx-swap="outerHTML"
+    hx-include="#date-range-form">
     {% include "components/kpis.html" %}
 </section>
 
 <section class="grid two">
     <div id="donut-panel"
-        hx-get="/components/category-donut?{{ period_query }}"
-        hx-trigger="load, transactions-changed from:body"
-        hx-swap="outerHTML">
+        hx-get="/components/category-donut"
+        hx-trigger="load, transactions-changed from:body, dateRangeChanged from:#date-range-picker"
+        hx-swap="outerHTML"
+        hx-include="#date-range-form">
         {% include "components/donut.html" %}
     </div>
     <div>
@@ -53,15 +64,106 @@
             <label>Note
                 <input type="text" name="note" placeholder="Optional note">
             </label>
+            <label style="display:flex; align-items:center; gap:0.5rem;">
+                <input type="checkbox" name="kind" value="adjustment">
+                <span>Adjustment <small style="opacity:0.7;">(reconciliation; not in charts)</small></span>
+            </label>
+            <input type="hidden" name="kind" value="normal">
             <button class="button" type="submit">Add</button>
         </form>
     </div>
 </section>
 
 <div id="recent-panel"
-    hx-get="/components/transaction-list?{{ period_query }}"
-    hx-trigger="load, transactions-changed from:body"
-    hx-swap="outerHTML">
+    hx-get="/components/transaction-list"
+    hx-trigger="load, transactions-changed from:body, dateRangeChanged from:#date-range-picker"
+    hx-swap="outerHTML"
+    hx-include="#date-range-form">
     {% include "components/transaction_list.html" with transactions=recent %}
 </div>
+
+<div style="position: fixed; bottom: 2rem; right: 2rem; z-index: 100;">
+    <a href="/" class="button" style="border-radius: 50%; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">+</a>
+</div>
+
+<script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function DateRangePicker() {
+        const [start, setStart] = useState('{{ period.start }}');
+        const [end, setEnd] = useState('{{ period.end }}');
+
+        const handleDateChange = (newStart, newEnd) => {
+            setStart(newStart);
+            setEnd(newEnd);
+
+            const form = document.getElementById('date-range-form');
+            form.querySelector('input[name="start"]').value = newStart;
+            form.querySelector('input[name="end"]').value = newEnd;
+
+            const event = new CustomEvent('dateRangeChanged', {
+                detail: { start: newStart, end: newEnd }
+            });
+            document.getElementById('date-range-picker').dispatchEvent(event);
+        };
+
+        const formatDate = (dateStr) => {
+            const date = new Date(dateStr + 'T00:00:00');
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        };
+
+        const today = new Date();
+        const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const thisMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+
+        return (
+            <div style={{ marginBottom: '1rem' }}>
+                <button
+                    type="button"
+                    className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                        const newStart = thisMonthStart.toISOString().split('T')[0];
+                        const newEnd = thisMonthEnd.toISOString().split('T')[0];
+                        handleDateChange(newStart, newEnd);
+                    }}
+                >
+                    This Month
+                </button>
+                <button
+                    type="button"
+                    style={{ marginLeft: '0.5rem' }}
+                    className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                        const newStart = lastMonthStart.toISOString().split('T')[0];
+                        const newEnd = lastMonthEnd.toISOString().split('T')[0];
+                        handleDateChange(newStart, newEnd);
+                    }}
+                >
+                    Last Month
+                </button>
+                <button
+                    type="button"
+                    style={{ marginLeft: '0.5rem' }}
+                    className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    onClick={() => {
+                        const start = prompt('Start date (YYYY-MM-DD):', start);
+                        const end = prompt('End date (YYYY-MM-DD):', end);
+                        if (start && end) {
+                            handleDateChange(start, end);
+                        }
+                    }}
+                >
+                    {formatDate(start)} - {formatDate(end)}
+                </button>
+            </div>
+        );
+    }
+
+    const container = document.getElementById('date-range-container');
+    if (container) {
+        ReactDOM.render(<DateRangePicker />, container);
+    }
+</script>
 {% endblock %}

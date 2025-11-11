@@ -1,5 +1,5 @@
 [project]
-name = "expenses"
+name = "expenses-web"
 version = "0.1.0"
 description = "A lightweight, mobile-first expense tracker"
 readme = "README.md"
@@ -16,9 +16,6 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "tzdata>=2024.1"
 ]
-
-[project.scripts]
-start = "main:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.2.0"]

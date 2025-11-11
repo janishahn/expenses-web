@@ -6,7 +6,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from models import IntervalUnit, MonthDayPolicy, TransactionType
+from models import IntervalUnit, MonthDayPolicy, TransactionKind, TransactionType
 
 
 class CategoryIn(BaseModel):
@@ -19,6 +19,7 @@ class CategoryIn(BaseModel):
 class TransactionIn(BaseModel):
     date: date
     type: TransactionType
+    kind: TransactionKind = TransactionKind.normal
     amount_cents: int = Field(..., ge=0)
     category_id: int
     note: Optional[str]
@@ -42,6 +43,7 @@ class RecurringRuleIn(BaseModel):
 class CSVRow(BaseModel):
     date: date
     type: TransactionType
+    kind: TransactionKind = TransactionKind.normal
     amount_cents: int
     category: str
     note: Optional[str]

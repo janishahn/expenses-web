@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<section>
-    <h1>Transactions</h1>
+<div style="position: sticky; top: 0; background: white; z-index: 100; padding: 1rem 0; border-bottom: 1px solid #e5e5e5; margin-bottom: 1rem;">
+    <h1 style="margin-bottom: 1rem;">Transactions</h1>
     <form method="get" class="grid two">
         <label>Type
             <select name="type">
@@ -39,47 +39,50 @@
         </label>
         <button class="button" type="submit">Apply</button>
     </form>
-    <div style="margin-top:1rem;">
+    <div style="margin-top: 1rem;">
         <a class="button secondary" href="/transactions/export.csv?{{ period_query }}{% if filter_query %}&{{ filter_query }}{% endif %}">
             Export CSV
         </a>
     </div>
-</section>
+</div>
 
-<section id="transactions-table">
-    <table>
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Note</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for txn in transactions %}
-            <tr>
-                <td>{{ txn.date }}</td>
-                <td>{{ txn.type.value }}</td>
-                <td>{{ txn.category.name if txn.category else "-" }}</td>
-                <td>{{ txn.amount_cents|currency }} €</td>
-                <td>{{ txn.note or "" }}</td>
-                <td>
-                    <form hx-post="/transactions/{{ txn.id }}/delete" hx-swap="none">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button class="button secondary" type="submit">Delete</button>
-                    </form>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="6">No transactions.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<div style="position: fixed; bottom: 2rem; right: 2rem; z-index: 100;">
+    <a href="/" class="button" style="border-radius: 50%; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">+</a>
+</div>
+
+<section id="transactions-list">
+    <div style="display: grid; gap: 1rem; margin-bottom: 2rem;">
+        {% for txn in transactions %}
+        <div style="background: white; border: 1px solid #e5e5e5; border-radius: 8px; padding: 1rem; display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center;">
+            <div>
+                <div style="font-weight: 600; font-size: 1.1rem;">
+                    {{ txn.category.name if txn.category else "-" }}
+                    {% if txn.kind == 'adjustment' %}
+                    <span style="font-size: 0.75rem; color: #666; background: #f0f0f0; padding: 0.125rem 0.5rem; border-radius: 4px; margin-left: 0.5rem;">ADJ</span>
+                    {% endif %}
+                </div>
+                <div style="color: #666; font-size: 0.9rem; margin-top: 0.25rem;">
+                    {{ txn.date }}
+                    {% if txn.note %}
+                    <div style="margin-top: 0.25rem;">{{ txn.note }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-weight: 600; font-size: 1.2rem; {% if txn.type.value == 'expense' %}color: #dc2626;{% else %}color: #16a34a;{% endif %}">
+                    {% if txn.type.value == 'expense' %}-{% endif %}{{ txn.amount_cents|currency }} €
+                </div>
+                <div style="font-size: 0.75rem; color: #666; margin-top: 0.25rem;">
+                    {{ txn.type.value.title() }}
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div style="text-align: center; padding: 2rem; color: #666;">
+            No transactions found.
+        </div>
+        {% endfor %}
+    </div>
     <div class="grid two">
         <div>
             {% if page > 1 %}

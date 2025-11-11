@@ -27,6 +27,11 @@ class TransactionType(str, Enum):
     expense = "expense"
 
 
+class TransactionKind(str, Enum):
+    normal = "normal"
+    adjustment = "adjustment"
+
+
 class IntervalUnit(str, Enum):
     day = "day"
     week = "week"
@@ -75,6 +80,7 @@ class Transaction(Base, TimestampMixin):
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     type: Mapped[TransactionType] = mapped_column(SAEnum(TransactionType), nullable=False)
+    kind: Mapped[TransactionKind] = mapped_column(SAEnum(TransactionKind), default=TransactionKind.normal, nullable=False)
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
     note: Mapped[Optional[str]] = mapped_column(Text)

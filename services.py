@@ -12,14 +12,46 @@ from models import (
     Category,
     IntervalUnit,
     MonthDayPolicy,
+    MonthlyRollup,
     RecurringRule,
     Transaction,
+    TransactionKind,
     TransactionType,
 )
 from periods import Period
 from recurrence import RecurringEngine
 from csv_utils import export_transactions, parse_csv
 from schemas import CategoryIn, RecurringRuleIn, TransactionIn
+
+
+def update_monthly_rollup(session: Session, user_id: int, txn_date: date, txn_type: TransactionType, amount_cents: int, increment: bool = True) -> None:
+    """Update or create a monthly rollup for the given transaction."""
+    year = txn_date.year
+    month = txn_date.month
+    sign = 1 if increment else -1
+
+    rollup = session.scalar(
+        select(MonthlyRollup).where(
+            MonthlyRollup.user_id == user_id,
+            MonthlyRollup.year == year,
+            MonthlyRollup.month == month,
+        )
+    )
+
+    if not rollup:
+        rollup = MonthlyRollup(
+            user_id=user_id,
+            year=year,
+            month=month,
+            income_cents=0,
+            expense_cents=0,
+        )
+        session.add(rollup)
+
+    if txn_type == TransactionType.income:
+        rollup.income_cents = max(0, rollup.income_cents + sign * amount_cents)
+    else:
+        rollup.expense_cents = max(0, rollup.expense_cents + sign * amount_cents)
 
 
 def get_current_user_id() -> int:
@@ -105,11 +137,17 @@ class TransactionService:
             user_id=self.user_id,
             date=data.date,
             type=data.type,
+            kind=data.kind,
             amount_cents=data.amount_cents,
             category_id=data.category_id,
             note=data.note,
         )
         self.session.add(txn)
+        update_monthly_rollup(self.session, self.user_id, data.date, data.type, data.amount_cents, increment=True)
+        # Invalidate donut cache for the transaction period
+        period = Period(data.date, data.date)
+        metrics = MetricsService(self.session, self.user_id)
+        metrics._invalidate_period_cache(period)
         self.session.commit()
         self.session.refresh(txn)
         return txn
@@ -175,6 +213,11 @@ class TransactionService:
         txn = self.session.get(Transaction, transaction_id)
         if not txn or txn.user_id != self.user_id:
             raise ValueError("Transaction not found")
+        update_monthly_rollup(self.session, self.user_id, txn.date, txn.type, txn.amount_cents, increment=False)
+        # Invalidate donut cache for the transaction period
+        period = Period(txn.date, txn.date)
+        metrics = MetricsService(self.session, self.user_id)
+        metrics._invalidate_period_cache(period)
         txn.deleted_at = datetime.utcnow()
         self.session.commit()
 
@@ -183,28 +226,40 @@ class MetricsService:
     def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
         self.session = session
         self.user_id = user_id or get_current_user_id()
+        self._category_breakdown_cache: dict[str, list[dict[str, object]]] = {}
+
+    def _invalidate_period_cache(self, period: Period) -> None:
+        """Invalidate cache entries for a given period."""
+        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}"
+        if period_key in self._category_breakdown_cache:
+            del self._category_breakdown_cache[period_key]
 
     def kpis(self, period: Period) -> dict[str, int]:
-        stmt = (
-            select(Transaction.type, func.sum(Transaction.amount_cents))
-            .where(
-                Transaction.user_id == self.user_id,
-                Transaction.deleted_at.is_(None),
-                Transaction.date.between(period.start, period.end),
+        year = period.start.year
+        month = period.start.month
+
+        rollup = self.session.scalar(
+            select(MonthlyRollup).where(
+                MonthlyRollup.user_id == self.user_id,
+                MonthlyRollup.year == year,
+                MonthlyRollup.month == month,
             )
-            .group_by(Transaction.type)
         )
-        totals = {TransactionType.income: 0, TransactionType.expense: 0}
-        for row in self.session.execute(stmt):
-            totals[row[0]] = row[1] or 0
-        balance = totals[TransactionType.income] - totals[TransactionType.expense]
+
+        if not rollup:
+            return {"income": 0, "expenses": 0, "balance": 0}
+
+        balance = rollup.income_cents - rollup.expense_cents
         return {
-            "income": totals[TransactionType.income],
-            "expenses": totals[TransactionType.expense],
+            "income": rollup.income_cents,
+            "expenses": rollup.expense_cents,
             "balance": balance,
         }
 
     def category_breakdown(self, period: Period) -> list[dict[str, object]]:
+        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}"
+        if period_key in self._category_breakdown_cache:
+            return self._category_breakdown_cache[period_key]
         stmt = (
             select(Category.name, func.sum(Transaction.amount_cents).label("total"))
             .join(Category, Category.id == Transaction.category_id)
@@ -212,6 +267,7 @@ class MetricsService:
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
                 Transaction.type == TransactionType.expense,
+                Transaction.kind == TransactionKind.normal,
                 Transaction.date.between(period.start, period.end),
             )
             .group_by(Category.name)
@@ -224,6 +280,7 @@ class MetricsService:
             amount = row.total or 0
             percent = (amount / total * 100) if total else 0
             breakdown.append({"name": row.name, "amount_cents": amount, "percent": percent})
+        self._category_breakdown_cache[period_key] = breakdown
         return breakdown
 
 
@@ -231,6 +288,12 @@ class RecurringRuleService:
     def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
         self.session = session
         self.user_id = user_id or get_current_user_id()
+
+    def get(self, rule_id: int) -> RecurringRule:
+        rule = self.session.get(RecurringRule, rule_id)
+        if not rule or rule.user_id != self.user_id:
+            raise ValueError("Rule not found")
+        return rule
 
     def list(self) -> list[RecurringRule]:
         stmt = (
@@ -321,6 +384,7 @@ class CSVService:
                 {
                     "date": row.date,
                     "type": row.type.value,
+                    "kind": row.kind.value,
                     "amount_cents": row.amount_cents,
                     "category": row.category,
                     "note": row.note,
@@ -333,16 +397,25 @@ class CSVService:
         preview_rows, errors = self.preview(content)
         if errors:
             raise ValueError("; ".join(errors))
+        dates = set()
         for row in preview_rows:
             txn = Transaction(
                 user_id=self.user_id,
                 date=row["date"],
                 type=TransactionType(row["type"]),
+                kind=row.get("kind", TransactionKind.normal),
                 amount_cents=row["amount_cents"],
                 category_id=row["category_id"],
                 note=row["note"],
             )
             self.session.add(txn)
+            update_monthly_rollup(self.session, self.user_id, row["date"], TransactionType(row["type"]), row["amount_cents"], increment=True)
+            dates.add(row["date"])
+        # Invalidate donut cache for all affected periods
+        metrics = MetricsService(self.session, self.user_id)
+        for txn_date in dates:
+            period = Period(txn_date, txn_date)
+            metrics._invalidate_period_cache(period)
         self.session.commit()
         return len(preview_rows)
 

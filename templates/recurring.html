@@ -69,6 +69,7 @@
                 <th>Next</th>
                 <th>Amount</th>
                 <th>Auto</th>
+                <th>View</th>
                 <th>Edit</th>
             </tr>
         </thead>
@@ -87,6 +88,9 @@
                             {{ "Disable" if rule.auto_post else "Enable" }}
                         </button>
                     </form>
+                </td>
+                <td>
+                    <a class="button secondary" href="/recurring/{{ rule.id }}/occurrences">Occurrences</a>
                 </td>
                 <td>
                     <details>
