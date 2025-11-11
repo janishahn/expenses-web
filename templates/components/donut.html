@@ -1,0 +1,10 @@
+<section>
+    <h3>Category Breakdown</h3>
+    <ul>
+        {% for row in breakdown %}
+        <li>{{ row.name }} — {{ row.amount_cents|currency }} € ({{ "%.1f"|format(row.percent) }}%)</li>
+        {% else %}
+        <li>No expenses this period.</li>
+        {% endfor %}
+    </ul>
+</section>

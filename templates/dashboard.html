@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+    <h1>Dashboard</h1>
+    <div>
+        <form method="get" class="grid two">
+            <input type="hidden" name="start" value="{{ period.start }}">
+            <input type="hidden" name="end" value="{{ period.end }}">
+            <button class="button secondary" name="period" value="this_month">This Month</button>
+            <button class="button secondary" name="period" value="last_month">Last Month</button>
+        </form>
+    </div>
+</header>
+
+<section id="kpi-panel"
+    hx-get="/components/kpis?{{ period_query }}"
+    hx-trigger="load, transactions-changed from:body"
+    hx-swap="outerHTML">
+    {% include "components/kpis.html" %}
+</section>
+
+<section class="grid two">
+    <div id="donut-panel"
+        hx-get="/components/category-donut?{{ period_query }}"
+        hx-trigger="load, transactions-changed from:body"
+        hx-swap="outerHTML">
+        {% include "components/donut.html" %}
+    </div>
+    <div>
+        <h3>Quick Add</h3>
+        <form hx-post="/transactions" hx-swap="none" hx-trigger="submit" hx-on::afterRequest="this.reset()">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label>Date
+                <input type="date" name="date" value="{{ period.end }}">
+            </label>
+            <label>Type
+                <select name="type">
+                    {% for t in TransactionType %}
+                    <option value="{{ t.value }}">{{ t.value.title() }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Amount
+                <input type="text" name="amount" placeholder="12.34">
+            </label>
+            <label>Category
+                <select name="category_id">
+                    {% for category in categories %}
+                    <option value="{{ category.id }}">{{ category.name }} ({{ category.type.value }})</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Note
+                <input type="text" name="note" placeholder="Optional note">
+            </label>
+            <button class="button" type="submit">Add</button>
+        </form>
+    </div>
+</section>
+
+<div id="recent-panel"
+    hx-get="/components/transaction-list?{{ period_query }}"
+    hx-trigger="load, transactions-changed from:body"
+    hx-swap="outerHTML">
+    {% include "components/transaction_list.html" with transactions=recent %}
+</div>
+{% endblock %}

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Expenses</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}">
+    <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
+</head>
+<body>
+    <nav class="container">
+        <div class="grid two">
+            <a href="/" class="button secondary">Dashboard</a>
+            <a href="/transactions" class="button secondary">Transactions</a>
+            <a href="/categories" class="button secondary">Categories</a>
+            <a href="/recurring" class="button secondary">Recurring</a>
+        </div>
+    </nav>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

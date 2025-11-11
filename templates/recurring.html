@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+    <h1>Recurring Rules</h1>
+    <form method="post" action="/recurring">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Name
+            <input type="text" name="name">
+        </label>
+        <label>Type
+            <select name="type">
+                {% for t in TransactionType %}
+                <option value="{{ t.value }}">{{ t.value.title() }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Amount
+            <input type="text" name="amount" required>
+        </label>
+        <label>Category
+            <select name="category_id">
+                {% for category in categories %}
+                <option value="{{ category.id }}">{{ category.name }} ({{ category.type.value }})</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Anchor Date
+            <input type="date" name="anchor_date" required>
+        </label>
+        <label>Interval Unit
+            <select name="interval_unit">
+                {% for unit in IntervalUnit %}
+                <option value="{{ unit.value }}">{{ unit.value.title() }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Interval Count
+            <input type="number" min="1" name="interval_count" value="1">
+        </label>
+        <label>Next Occurrence
+            <input type="date" name="next_occurrence" required>
+        </label>
+        <label>End Date
+            <input type="date" name="end_date">
+        </label>
+        <label>Month-day Policy
+            <select name="month_day_policy">
+                {% for policy in MonthDayPolicy %}
+                <option value="{{ policy.value }}">{{ policy.value.replace('_',' ').title() }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <input type="checkbox" name="auto_post" checked> Auto-post
+        </label>
+        <label>
+            <input type="checkbox" name="skip_weekends"> Skip weekends
+        </label>
+        <button class="button" type="submit">Create Rule</button>
+    </form>
+</section>
+
+<section id="recurring-list">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Next</th>
+                <th>Amount</th>
+                <th>Auto</th>
+                <th>Edit</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rule in rules %}
+            <tr>
+                <td>{{ rule.name or "Unnamed" }}</td>
+                <td>{{ rule.category.name if rule.category else "-" }}</td>
+                <td>{{ rule.next_occurrence }}</td>
+                <td>{{ rule.amount_cents|currency }} €</td>
+                <td>
+                    <form hx-post="/recurring/{{ rule.id }}/toggle" hx-swap="none">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="auto_post" value="{{ 'false' if rule.auto_post else 'true' }}">
+                        <button class="button secondary" type="submit">
+                            {{ "Disable" if rule.auto_post else "Enable" }}
+                        </button>
+                    </form>
+                </td>
+                <td>
+                    <details>
+                        <summary>Open</summary>
+                        <form method="post" action="/recurring/{{ rule.id }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <label>Name
+                                <input type="text" name="name" value="{{ rule.name or '' }}">
+                            </label>
+                            <label>Type
+                                <select name="type">
+                                    {% for t in TransactionType %}
+                                    <option value="{{ t.value }}" {% if rule.type == t %}selected{% endif %}>{{ t.value.title() }}</option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label>Amount
+                                <input type="text" name="amount" value="{{ '%.2f' % (rule.amount_cents / 100) }}">
+                            </label>
+                            <label>Category
+                                <select name="category_id">
+                                    {% for category in categories %}
+                                    <option value="{{ category.id }}" {% if rule.category_id == category.id %}selected{% endif %}>
+                                        {{ category.name }} ({{ category.type.value }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label>Anchor Date
+                                <input type="date" name="anchor_date" value="{{ rule.anchor_date }}">
+                            </label>
+                            <label>Interval Unit
+                                <select name="interval_unit">
+                                    {% for unit in IntervalUnit %}
+                                    <option value="{{ unit.value }}" {% if rule.interval_unit == unit %}selected{% endif %}>
+                                        {{ unit.value.title() }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label>Interval Count
+                                <input type="number" name="interval_count" value="{{ rule.interval_count }}">
+                            </label>
+                            <label>Next Occurrence
+                                <input type="date" name="next_occurrence" value="{{ rule.next_occurrence }}">
+                            </label>
+                            <label>End Date
+                                <input type="date" name="end_date" value="{{ rule.end_date or '' }}">
+                            </label>
+                            <label>Month-day Policy
+                                <select name="month_day_policy">
+                                    {% for policy in MonthDayPolicy %}
+                                    <option value="{{ policy.value }}" {% if rule.month_day_policy == policy %}selected{% endif %}>
+                                        {{ policy.value.replace('_',' ').title() }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </label>
+                            <label>
+                                <input type="checkbox" name="auto_post" {% if rule.auto_post %}checked{% endif %}> Auto-post
+                            </label>
+                            <label>
+                                <input type="checkbox" name="skip_weekends" {% if rule.skip_weekends %}checked{% endif %}> Skip weekends
+                            </label>
+                            <button class="button secondary" type="submit">Save</button>
+                        </form>
+                    </details>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

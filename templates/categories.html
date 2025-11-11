@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+    <h1>Categories</h1>
+    <form method="post" action="/categories">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Name
+            <input type="text" name="name" required>
+        </label>
+        <label>Type
+            <select name="type">
+                {% for t in TransactionType %}
+                <option value="{{ t.value }}">{{ t.value.title() }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Color
+            <input type="color" name="color">
+        </label>
+        <button class="button" type="submit">Create</button>
+    </form>
+</section>
+
+<section id="category-list">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for category in categories %}
+            <tr>
+                <td>{{ category.name }}</td>
+                <td>{{ category.type.value }}</td>
+                <td>{{ "Archived" if category.archived_at else "Active" }}</td>
+                <td>
+                    {% if not category.archived_at %}
+                    <form hx-post="/categories/{{ category.id }}/archive" hx-swap="none">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="button secondary" type="submit">Archive</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
