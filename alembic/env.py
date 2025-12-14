@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 from logging.config import fileConfig
 import sys
@@ -13,14 +11,19 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+
 # Import project modules after path modification
 def _get_settings():
     from config import get_settings
+
     return get_settings()
+
 
 def _get_base():
     from database import Base
+
     return Base
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

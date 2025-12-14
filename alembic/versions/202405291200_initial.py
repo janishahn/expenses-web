@@ -5,7 +5,6 @@ Revises:
 Create Date: 2024-05-29 12:00:00.000000
 
 """
-from __future__ import annotations
 
 from alembic import op
 import sqlalchemy as sa
@@ -23,13 +22,17 @@ def upgrade():
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), nullable=False, default=1),
         sa.Column("name", sa.String(length=100), nullable=False),
-        sa.Column("type", sa.Enum("income", "expense", name="transactiontype"), nullable=False),
+        sa.Column(
+            "type", sa.Enum("income", "expense", name="transactiontype"), nullable=False
+        ),
         sa.Column("color", sa.String(length=7)),
         sa.Column("order", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("archived_at", sa.DateTime()),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.UniqueConstraint("user_id", "type", "name", name="uq_category_user_type_name"),
+        sa.UniqueConstraint(
+            "user_id", "type", "name", name="uq_category_user_type_name"
+        ),
     )
 
     op.create_table(
@@ -37,9 +40,13 @@ def upgrade():
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), nullable=False, default=1),
         sa.Column("name", sa.String(length=120)),
-        sa.Column("type", sa.Enum("income", "expense", name="transactiontype"), nullable=False),
+        sa.Column(
+            "type", sa.Enum("income", "expense", name="transactiontype"), nullable=False
+        ),
         sa.Column("amount_cents", sa.Integer(), nullable=False),
-        sa.Column("category_id", sa.Integer(), sa.ForeignKey("categories.id"), nullable=False),
+        sa.Column(
+            "category_id", sa.Integer(), sa.ForeignKey("categories.id"), nullable=False
+        ),
         sa.Column("anchor_date", sa.Date(), nullable=False),
         sa.Column(
             "interval_unit",
@@ -50,7 +57,9 @@ def upgrade():
         sa.Column("next_occurrence", sa.Date(), nullable=False),
         sa.Column("end_date", sa.Date()),
         sa.Column("auto_post", sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column("skip_weekends", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column(
+            "skip_weekends", sa.Boolean(), nullable=False, server_default=sa.false()
+        ),
         sa.Column(
             "month_day_policy",
             sa.Enum("snap_to_end", "skip", "carry_forward", name="monthdaypolicy"),
@@ -81,9 +90,13 @@ def upgrade():
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), nullable=False, default=1),
         sa.Column("date", sa.Date(), nullable=False),
-        sa.Column("type", sa.Enum("income", "expense", name="transactiontype"), nullable=False),
+        sa.Column(
+            "type", sa.Enum("income", "expense", name="transactiontype"), nullable=False
+        ),
         sa.Column("amount_cents", sa.Integer(), nullable=False),
-        sa.Column("category_id", sa.Integer(), sa.ForeignKey("categories.id"), nullable=False),
+        sa.Column(
+            "category_id", sa.Integer(), sa.ForeignKey("categories.id"), nullable=False
+        ),
         sa.Column("note", sa.Text()),
         sa.Column("deleted_at", sa.DateTime()),
         sa.Column("origin_rule_id", sa.Integer(), sa.ForeignKey("recurring_rules.id")),

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="space-y-6">
+    <div class="space-y-2">
+        <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Admin</p>
+        <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Import legacy SQLite</h1>
+        <p class="text-slate-500 dark:text-slate-400">Upload an old expense tracker database and map its categories into this tracker.</p>
+    </div>
+
+    <div class="card shadow-hover">
+        <div class="card-header">
+            <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Upload</h2>
+        </div>
+        <div class="separator"></div>
+        <div class="card-body space-y-4">
+            <form hx-post="/admin/import-sqlite/preview"
+                  hx-target="#sqlite-preview"
+                  hx-swap="innerHTML"
+                  enctype="multipart/form-data"
+                  class="space-y-3 p-4 border border-dashed border-border rounded-xl">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <p class="text-sm text-slate-500 dark:text-slate-400">Select a legacy <code>.db</code> file to inspect and map.</p>
+                <input type="file" name="file" accept=".db" class="input">
+                <button type="submit" class="btn btn-primary btn-sm">Preview</button>
+            </form>
+
+            <div id="sqlite-preview"></div>
+            <div id="sqlite-status"></div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+

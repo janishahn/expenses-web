@@ -1,14 +1,90 @@
-<div class="grid two">
-    <div class="kpi">
-        <span>Income</span>
-        <span class="kpi-value">{{ kpi.income|currency }} €</span>
-    </div>
-    <div class="kpi">
-        <span>Expenses</span>
-        <span class="kpi-value">{{ kpi.expenses|currency }} €</span>
-    </div>
-    <div class="kpi">
-        <span>Balance</span>
-        <span class="kpi-value">{{ kpi.balance|currency }} €</span>
-    </div>
+<div id="kpi-panel"
+     hx-get="/components/kpis"
+     hx-trigger="transactions-changed from:body, filtersChanged from:#dashboard-filters"
+     hx-swap="outerHTML"
+     hx-include="#dashboard-filter-form"
+     hx-indicator=".kpi-indicator">
+{% set spark = sparklines if sparklines is defined else {} %}
+{% set deltas = deltas if deltas is defined else None %}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+    <article class="card" data-elevation="1">
+        <div class="card-body space-y-4">
+            <div class="metric-eyebrow">Income</div>
+            <div class="flex items-end justify-between gap-4">
+                <p class="metric-value tabular text-emerald-500">{{ kpi.income|currency }} €</p>
+                <div class="sparkline-slot" aria-hidden="true">
+                    {% if spark.get("income") %}
+                    <svg class="sparkline sparkline--income" viewBox="0 0 100 30" preserveAspectRatio="none">
+                        <polyline points="{{ spark.get('income') }}" fill="none"></polyline>
+                    </svg>
+                    {% else %}
+                    <div class="sparkline-placeholder"></div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+                <span>Total money received</span>
+                {% if deltas %}
+                <span class="pill" aria-hidden="true">
+                    {% if deltas.income >= 0 %}+{% endif %}{{ deltas.income|currency }} € vs prev
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </article>
+
+    <article class="card" data-elevation="1">
+        <div class="card-body space-y-4">
+            <div class="metric-eyebrow">Expenses</div>
+            <div class="flex items-end justify-between gap-4">
+                <p class="metric-value tabular text-rose-500">{{ kpi.expenses|currency }} €</p>
+                <div class="sparkline-slot" aria-hidden="true">
+                    {% if spark.get("expenses") %}
+                    <svg class="sparkline sparkline--expenses" viewBox="0 0 100 30" preserveAspectRatio="none">
+                        <polyline points="{{ spark.get('expenses') }}" fill="none"></polyline>
+                    </svg>
+                    {% else %}
+                    <div class="sparkline-placeholder"></div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+                <span>Total money spent</span>
+                {% if deltas %}
+                <span class="pill" aria-hidden="true">
+                    {% if deltas.expenses >= 0 %}+{% endif %}{{ deltas.expenses|currency }} € vs prev
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </article>
+
+    <article class="card" data-elevation="1">
+        <div class="card-body space-y-4">
+            <div class="metric-eyebrow">Balance</div>
+            <div class="flex items-end justify-between gap-4">
+                <p class="metric-value tabular {% if kpi.balance < 0 %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                    {{ kpi.balance|currency }} €
+                </p>
+                <div class="sparkline-slot" aria-hidden="true">
+                    {% if spark.get("balance") %}
+                    <svg class="sparkline sparkline--balance" viewBox="0 0 100 30" preserveAspectRatio="none">
+                        <polyline points="{{ spark.get('balance') }}" fill="none"></polyline>
+                    </svg>
+                    {% else %}
+                    <div class="sparkline-placeholder"></div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+                <span>Net position</span>
+                {% if deltas %}
+                <span class="pill" aria-hidden="true">
+                    {% if deltas.balance >= 0 %}+{% endif %}{{ deltas.balance|currency }} € vs prev
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </article>
+</div>
 </div>

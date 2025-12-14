@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 import csv
+import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from io import StringIO
@@ -8,6 +7,44 @@ from typing import Sequence
 
 from models import Transaction, TransactionKind, TransactionType
 from schemas import CSVRow
+
+
+def sanitize_csv_value(value: str) -> str:
+    """
+    Sanitize CSV values to prevent formula injection.
+
+    This prevents Excel/Google Sheets from executing malicious formulas
+    by either:
+    1. Prefixing with tab (safer, maintains formatting)
+    2. Escaping with single quote (alternative approach)
+    """
+    if not value or value.strip() == "":
+        return ""
+
+    value = str(value).strip()
+
+    # Check if value starts with formula triggers
+    formula_triggers = ("=", "+", "-", "@", "\t", "\r")
+
+    if value.startswith(formula_triggers):
+        # Prefix with tab to prevent formula execution
+        return "\t" + value
+
+    # Also escape if it looks like it could be a command
+    dangerous_patterns = [
+        r"^cmd\s*",
+        r"^powershell\s*",
+        r"^bash\s*",
+        r"^sh\s*",
+        r"^\.",
+        r"^http[s]?://",
+    ]
+
+    for pattern in dangerous_patterns:
+        if re.match(pattern, value, re.IGNORECASE):
+            return "\t" + value
+
+    return value
 
 
 def parse_date(value: str):
@@ -44,11 +81,19 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
             type_raw = (raw.get("Type") or "").strip().lower()
             type_value = TransactionType(type_raw)
             kind_raw = (raw.get("Kind") or "normal").strip().lower()
-            kind_value = TransactionKind(kind_raw) if kind_raw in ["normal", "adjustment"] else TransactionKind.normal
+            kind_value = (
+                TransactionKind(kind_raw)
+                if kind_raw in ["normal", "adjustment"]
+                else TransactionKind.normal
+            )
             amount_value = parse_amount(raw.get("Amount") or "0")
             category = (raw.get("Category") or "").strip()
             note_raw = raw.get("Note")
-            note = note_raw.strip() if isinstance(note_raw, str) and note_raw.strip() else None
+            note = (
+                note_raw.strip()
+                if isinstance(note_raw, str) and note_raw.strip()
+                else None
+            )
             rows.append(
                 CSVRow(
                     date=date_value,
@@ -73,10 +118,10 @@ def export_transactions(transactions: Sequence[Transaction]) -> str:
             [
                 txn.date.isoformat(),
                 txn.type.value,
-                txn.kind.value if hasattr(txn, 'kind') else 'normal',
+                txn.kind.value,
                 f"{txn.amount_cents / 100:.2f}",
-                txn.category.name if txn.category else "",
-                txn.note or "",
+                sanitize_csv_value(txn.category.name if txn.category else ""),
+                sanitize_csv_value(txn.note or ""),
             ]
         )
     return output.getvalue()

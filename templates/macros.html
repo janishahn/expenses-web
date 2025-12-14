@@ -1,0 +1,4 @@
+{# Icon macro for Lucide Icons #}
+{% macro icon(name, size=24, class="") -%}
+    <i data-lucide="{{ name }}" class="{{ class }}" style="width: {{ size }}px; height: {{ size }}px;"></i>
+{%- endmacro %}

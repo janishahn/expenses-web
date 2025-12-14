@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional
@@ -20,6 +18,8 @@ def resolve_period(
     today: Optional[date] = None,
 ) -> Period:
     today = today or date.today()
+    if not period or period == "all":
+        return Period("all", date(1970, 1, 1), today)
     if period == "last_month":
         first_this = today.replace(day=1)
         last_month_end = first_this - date.resolution
@@ -34,7 +34,7 @@ def resolve_period(
             raise ValueError("Start date must be before end date")
         return Period("custom", start_date, end_date)
 
-    # default this month
+    # this month
     first = today.replace(day=1)
     if first.month == 12:
         next_month = first.replace(year=first.year + 1, month=1)

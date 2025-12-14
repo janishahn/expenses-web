@@ -92,5 +92,9 @@ def test_recurring_engine_idempotent_posts():
         recurring = RecurringEngine(session)
         recurring.catch_up_rule(rule, today=date(2024, 3, 1))
         session.commit()
-        txn_count = session.query(Transaction).filter(Transaction.origin_rule_id == rule.id).count()
+        txn_count = (
+            session.query(Transaction)
+            .filter(Transaction.origin_rule_id == rule.id)
+            .count()
+        )
         assert txn_count == 3

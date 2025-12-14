@@ -1,115 +1,101 @@
-import React, { useState, useEffect } from 'react';
+const { useState, useEffect, useRef } = React;
 
-function DateRangePicker({ initialStart, initialEnd, presets, onChange }) {
+function DateRangePicker({ initialStart, initialEnd, onApply, onExpose }) {
   const [start, setStart] = useState(initialStart);
   const [end, setEnd] = useState(initialEnd);
-  const [isOpen, setIsOpen] = useState(false);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
 
   useEffect(() => {
-    setStart(initialStart);
-    setEnd(initialEnd);
-  }, [initialStart, initialEnd]);
-
-  const handlePresetClick = (preset) => {
-    const today = new Date();
-    let startDate, endDate;
-
-    switch (preset) {
-      case 'this_month':
-        startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-        endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        break;
-      case 'last_month':
-        startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        endDate = new Date(today.getFullYear(), today.getMonth(), 0);
-        break;
-      default:
-        return;
+    const api = {
+      open: () => setOpen(true),
+      setRange: (s, e) => {
+        setStart(s);
+        setEnd(e);
+      },
+      close: () => setOpen(false),
+    };
+    if (onExpose) {
+      onExpose(api);
     }
+    return () => {
+      if (onExpose) {
+        onExpose(null);
+      }
+    };
+  }, [onExpose]);
 
-    const startStr = startDate.toISOString().split('T')[0];
-    const endStr = endDate.toISOString().split('T')[0];
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event) => {
+      const container = containerRef.current;
+      if (!container) return;
+      if (container.contains(event.target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
 
-    setStart(startStr);
-    setEnd(endStr);
-    onChange(startStr, endStr);
-    setIsOpen(false);
-  };
-
-  const handleCustomChange = () => {
-    onChange(start, end);
-    setIsOpen(false);
-  };
-
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const applyRange = () => {
+    if (start && end && onApply) {
+      onApply(start, end);
+    }
+    setOpen(false);
   };
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="date-range-picker">
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        className="btn btn-secondary btn-sm justify-between w-full date-range-picker__trigger"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open ? "true" : "false"}
       >
-        {formatDate(start)} - {formatDate(end)}
+        <span className="tabular text-sm">{start} → {end}</span>
+        <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M6 9l6 6 6-6"></path>
+        </svg>
       </button>
-
-      {isOpen && (
-        <div className="absolute z-10 mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
-          <div className="p-3 border-b border-gray-200">
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <button
-                type="button"
-                onClick={() => handlePresetClick('this_month')}
-                className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
-              >
-                This Month
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePresetClick('last_month')}
-                className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded"
-              >
-                Last Month
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">Start</label>
-                <input
-                  type="date"
-                  value={start}
-                  onChange={(e) => setStart(e.target.value)}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">End</label>
-                <input
-                  type="date"
-                  value={end}
-                  onChange={(e) => setEnd(e.target.value)}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                />
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleCustomChange}
-              className="w-full mt-2 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Apply
-            </button>
-          </div>
+      {open && (
+        <div className="date-range-picker__popover card p-4 space-y-3">
+          <label className="space-y-1 text-xs font-semibold text-slate-500">
+            Start
+            <input type="date" className="input" value={start} onChange={(e) => setStart(e.target.value)} />
+          </label>
+          <label className="space-y-1 text-xs font-semibold text-slate-500">
+            End
+            <input type="date" className="input" value={end} onChange={(e) => setEnd(e.target.value)} />
+          </label>
+          <button type="button" className="btn btn-primary btn-sm w-full" onClick={applyRange}>Apply</button>
         </div>
       )}
-
-      <input type="hidden" name="start" value={start} />
-      <input type="hidden" name="end" value={end} />
     </div>
   );
 }
 
-export default DateRangePicker;
+window.mountDateRangePicker = function mountDateRangePicker(targetId, options = {}) {
+  const host = document.getElementById(targetId);
+  if (!host || !window.ReactDOM) {
+    return null;
+  }
+  const props = {
+    initialStart: options.initialStart,
+    initialEnd: options.initialEnd,
+    onApply: options.onApply,
+    onExpose: options.onExpose,
+  };
+  ReactDOM.render(<DateRangePicker {...props} />, host);
+  return host;
+};

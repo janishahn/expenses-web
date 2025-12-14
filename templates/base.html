@@ -1,27 +1,119 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Expenses</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/main.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <script>
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ["Inter", "system-ui", "sans-serif"]
+                    },
+                    colors: {
+                        background: "hsl(var(--background) / <alpha-value>)",
+                        foreground: "hsl(var(--foreground) / <alpha-value>)",
+                        card: "hsl(var(--card) / <alpha-value>)",
+                        border: "hsl(var(--border) / <alpha-value>)",
+                        primary: "hsl(var(--primary) / <alpha-value>)"
+                    }
+                }
+            }
+        };
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/main.css') }}">
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" defer></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" defer></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js" defer></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="text/babel" data-presets="env,react" src="{{ url_for('static', path='js/dateRangePicker.jsx') }}"></script>
+    <script src="{{ url_for('static', path='js/app.js') }}" defer></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </head>
-<body>
-    <nav class="container">
-        <div class="grid three">
-            <a href="/" class="button secondary">Dashboard</a>
-            <a href="/transactions" class="button secondary">Transactions</a>
-            <a href="/categories" class="button secondary">Categories</a>
-            <a href="/recurring" class="button secondary">Recurring</a>
-            <a href="/admin" class="button secondary">Admin</a>
-        </div>
-    </nav>
-    <main class="container">
-        {% block content %}{% endblock %}
-    </main>
+<body class="app-shell">
+    {% set path = request.url.path %}
+    {% set nav_items = [
+        ("/", "Dashboard"),
+        ("/transactions", "Transactions"),
+        ("/budgets", "Budgets"),
+        ("/categories", "Categories"),
+        ("/recurring", "Recurring"),
+        ("/admin", "Admin")
+    ] %}
+    {% set show_pdf_action = path in ["/", "/report", "/reports"] %}
+    {% from "macros.html" import icon %}
+    <div id="app-shell">
+        <header class="app-header"
+                hx-boost="true"
+                hx-target="#app-shell"
+                hx-select="#app-shell"
+                hx-swap="outerHTML"
+                hx-push-url="true">
+            <div class="navbar max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8">
+                <a href="/" data-nav-base="/" class="brand-identity">
+                    <div class="brand-icon">€</div>
+                    <span class="brand-text">Expenses</span>
+                </a>
+                <nav class="nav-tabs nav-desktop">
+                    {% for href, label in nav_items %}
+                        {% set active = 'is-active' if path.startswith(href) and href != '/' else '' %}
+                        {% if href == '/' and path != '/' %}
+                            {% set active = '' %}
+                        {% elif href == '/' and path == '/' %}
+                            {% set active = 'is-active' %}
+                        {% endif %}
+                        <a href="{{ href }}" data-nav-base="{{ href }}" class="nav-tab {{ active }}">{{ label }}</a>
+                    {% endfor %}
+                </nav>
+                <div class="header-actions">
+                    <button type="button" class="btn btn-ghost btn-icon" data-theme-toggle aria-pressed="false">
+                        <span class="sr-only">Toggle color theme</span>
+                        {{ icon("sun", class="icon-sun") }}
+                        {{ icon("moon", class="icon-moon") }}
+                    </button>
+                    <button type="button" class="btn btn-primary btn-sm header-pdf-btn {% if not show_pdf_action %}visibility-hidden{% endif %}" data-open-report {% if not show_pdf_action %}disabled{% endif %}>
+                        Generate PDF
+                    </button>
+                    <button type="button" class="btn btn-ghost btn-icon mobile-menu-toggle" aria-label="Open menu" aria-expanded="false">
+                        {{ icon("menu", class="icon menu-icon") }}
+                        {{ icon("x", class="icon close-icon") }}
+                    </button>
+                </div>
+            </div>
+            <nav class="nav-mobile" aria-label="Mobile navigation">
+                <div class="nav-mobile-inner">
+                    {% for href, label in nav_items %}
+                        {% set active = 'is-active' if path.startswith(href) and href != '/' else '' %}
+                        {% if href == '/' and path != '/' %}
+                            {% set active = '' %}
+                        {% elif href == '/' and path == '/' %}
+                            {% set active = 'is-active' %}
+                        {% endif %}
+                        <a href="{{ href }}" data-nav-base="{{ href }}" class="nav-mobile-link {{ active }}">{{ label }}</a>
+                    {% endfor %}
+                </div>
+            </nav>
+        </header>
+        <main class="flex-1 w-full">
+            <div class="max-w-screen-xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 sm:space-y-8">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+    <div id="toast-root" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Re-initialize Lucide icons after htmx swaps
+        document.addEventListener('htmx:afterSwap', function() {
+            lucide.createIcons();
+        });
+    </script>
 </body>
 </html>

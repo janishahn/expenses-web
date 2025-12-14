@@ -1,246 +1,344 @@
 {% extends "base.html" %}
 {% block content %}
-<div style="position: sticky; top: 0; background: white; z-index: 100; padding: 1rem 0; border-bottom: 1px solid #e5e5e5; margin-bottom: 1rem;">
-    <h1 style="margin-bottom: 1rem;">Dashboard</h1>
-    <div>
-        <div id="date-range-picker">
-            <div id="date-range-container"></div>
+<section id="dashboard-filters" class="space-y-6">
+    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+        <div class="space-y-2">
+            <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Overview</p>
+            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Dashboard</h1>
+            <div class="pt-3">
+                <button type="button" class="btn btn-primary btn-sm" data-open-transaction>
+                    {{ icon("plus", class="icon") }}
+                    Add transaction
+                </button>
+            </div>
         </div>
-        <form id="date-range-form" method="get" style="display:none;">
-            <input type="hidden" name="start" value="{{ period.start }}">
-            <input type="hidden" name="end" value="{{ period.end }}">
-        </form>
-        <noscript>
-            <form method="get" class="grid two" style="margin-top: 0.5rem;">
+        <div class="flex-1 lg:max-w-3xl space-y-3" id="dashboard-filters-controls">
+            <form id="dashboard-filter-form" class="hidden">
                 <input type="hidden" name="start" value="{{ period.start }}">
                 <input type="hidden" name="end" value="{{ period.end }}">
-                <button class="button secondary" name="period" value="this_month">This Month</button>
-                <button class="button secondary" name="period" value="last_month">Last Month</button>
+                <input type="hidden" name="period" value="{{ period.slug }}">
+                <input type="hidden" name="type" value="">
             </form>
-        </noscript>
-    </div>
-</div>
-
-<section id="kpi-panel"
-    hx-get="/components/kpis"
-    hx-trigger="load, transactions-changed from:body, dateRangeChanged from:#date-range-picker"
-    hx-swap="outerHTML"
-    hx-include="#date-range-form">
-    {% include "components/kpis.html" %}
-</section>
-
-<section class="grid two">
-    <div id="donut-panel"
-        hx-get="/components/category-donut"
-        hx-trigger="load, transactions-changed from:body, dateRangeChanged from:#date-range-picker"
-        hx-swap="outerHTML"
-        hx-include="#date-range-form">
-        {% include "components/donut.html" %}
-    </div>
-    <div>
-        <h3>Quick Add</h3>
-        <form hx-post="/transactions" hx-swap="none" hx-trigger="submit" hx-on::afterRequest="this.reset()">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <label>Date
-                <input type="date" name="date" value="{{ period.end }}">
-            </label>
-            <label>Type
-                <select name="type">
-                    {% for t in TransactionType %}
-                    <option value="{{ t.value }}">{{ t.value.title() }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label>Amount
-                <input type="text" name="amount" placeholder="12.34">
-            </label>
-            <label>Category
-                <select name="category_id">
-                    {% for category in categories %}
-                    <option value="{{ category.id }}">{{ category.name }} ({{ category.type.value }})</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label>Note
-                <input type="text" name="note" placeholder="Optional note">
-            </label>
-            <label style="display:flex; align-items:center; gap:0.5rem;">
-                <input type="checkbox" name="kind" value="adjustment">
-                <span>Adjustment <small style="opacity:0.7;">(reconciliation; not in charts)</small></span>
-            </label>
-            <input type="hidden" name="kind" value="normal">
-            <button class="button" type="submit">Add</button>
-        </form>
-    </div>
-</section>
-
-<div id="recent-panel"
-    hx-get="/components/transaction-list"
-    hx-trigger="load, transactions-changed from:body, dateRangeChanged from:#date-range-picker"
-    hx-swap="outerHTML"
-    hx-include="#date-range-form">
-    {% include "components/transaction_list.html" %}
-</div>
-
-<div style="margin-top: 2rem; text-align: center;">
-    <button class="button" onclick="document.getElementById('report-modal').style.display='block'">Generate PDF Report</button>
-</div>
-
-<div id="report-modal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
-    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 2rem; border-radius: 8px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;">
-        <h2 style="margin-bottom: 1rem;">Generate PDF Report</h2>
-        <form id="report-form" method="post" action="/reports/pdf" target="_blank">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="start" value="{{ period.start }}">
-            <input type="hidden" name="end" value="{{ period.end }}">
-
-            <div style="margin-bottom: 1rem;">
-                <label>Period: {{ period.start }} to {{ period.end }}</label>
-            </div>
-
-            <div style="margin-bottom: 1rem;">
-                <label>Sections to include:</label>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-top: 0.5rem;">
-                    <label style="display:flex; align-items:center; gap:0.5rem;">
-                        <input type="checkbox" name="sections" value="summary" checked> Summary
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5rem;">
-                        <input type="checkbox" name="sections" value="kpis" checked> KPIs
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5rem;">
-                        <input type="checkbox" name="sections" value="category_breakdown" checked> Category Breakdown
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5rem;">
-                        <input type="checkbox" name="sections" value="top_categories"> Top Categories
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5rem;">
-                        <input type="checkbox" name="sections" value="trend"> Trend Line
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5rem;">
-                        <input type="checkbox" name="sections" value="recent_transactions" checked> Recent Transactions
-                    </label>
-                    <label style="display:flex; align-items:center; gap:0.5rem;">
-                        <input type="checkbox" name="sections" value="recurring_upcoming"> Upcoming Recurring
-                    </label>
+            <div class="ghost-card filter-bar flex-col xl:flex-row gap-4" role="toolbar" aria-label="Dashboard filters">
+                <div class="flex-1 min-w-[220px] space-y-2">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick ranges</p>
+                    <div class="chip-group" role="group" aria-label="Period presets">
+                        <button type="button" class="chip" data-period-chip="this_month">This Month</button>
+                        <button type="button" class="chip" data-period-chip="last_month">Last Month</button>
+                        <button type="button" class="chip" data-period-chip="all">All time</button>
+                        <button type="button" class="chip" data-period-chip="custom">Custom</button>
+                    </div>
+                </div>
+                <div class="min-w-[220px] space-y-2">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Date range</p>
+                    <div id="date-range-picker" data-start="{{ period.start }}" data-end="{{ period.end }}"></div>
+                </div>
+                <div class="space-y-2">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
+                    <div class="segmented" role="group" aria-label="Transaction type filter">
+                        <button type="button" class="is-active" data-type-chip="">All</button>
+                        <button type="button" data-type-chip="income">Income</button>
+                        <button type="button" data-type-chip="expense">Expense</button>
+                    </div>
                 </div>
             </div>
+        </div>
+    </div>
+</section>
 
-            <div style="margin-bottom: 1rem;">
-                <label>Currency Symbol
-                    <input type="text" name="currency_symbol" value="€" style="margin-left: 0.5rem; width: 50px;">
-                </label>
+<div class="relative">
+    {% include "components/kpis.html" %}
+    <div class="kpi-indicator htmx-indicator absolute inset-0 pointer-events-none">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 h-full">
+            {% for _ in range(3) %}
+            <div class="card" data-elevation="1">
+                <div class="card-body space-y-4">
+                    <div class="skeleton h-3 w-24"></div>
+                    <div class="skeleton h-8 w-32"></div>
+                    <div class="skeleton h-3 w-40"></div>
+                </div>
             </div>
-
-            <div style="margin-bottom: 1rem;">
-                <label style="display:flex; align-items:center; gap:0.5rem;">
-                    <input type="checkbox" name="include_cents" value="true" checked> Include cents
-                </label>
-            </div>
-
-            <div style="margin-bottom: 1rem;">
-                <label>Recent Transactions Count
-                    <input type="number" name="recent_transactions_count" value="50" min="1" max="200" style="margin-left: 0.5rem; width: 100px;">
-                </label>
-            </div>
-
-            <div style="margin-bottom: 1rem;">
-                <label>Notes (optional)
-                    <textarea name="notes" rows="3" style="margin-left: 0.5rem; width: 100%; margin-top: 0.5rem;"></textarea>
-                </label>
-            </div>
-
-            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
-                <button type="button" class="button secondary" onclick="document.getElementById('report-modal').style.display='none'">Cancel</button>
-                <button type="submit" class="button">Generate PDF</button>
-            </div>
-        </form>
+            {% endfor %}
+        </div>
     </div>
 </div>
 
-<div style="position: fixed; bottom: 2rem; right: 2rem; z-index: 100;">
-    <a href="/" class="button" style="border-radius: 50%; width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">+</a>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+    <div class="relative">
+        {% include "components/donut.html" %}
+        <div class="donut-indicator htmx-indicator absolute inset-0 rounded-xl bg-white/80 dark:bg-slate-900/70 backdrop-blur flex items-center justify-center">
+            <div class="skeleton h-40 w-40 max-w-[60%]"></div>
+        </div>
+    </div>
+    <div class="relative">
+        {% set transactions = recent %}
+        {% include "components/transaction_list.html" %}
+        <div class="recent-indicator htmx-indicator absolute inset-0 rounded-xl bg-white/70 dark:bg-slate-900/70 backdrop-blur flex items-center justify-center">
+            <div class="space-y-3 w-full px-6">
+                {% for _ in range(4) %}
+                <div class="skeleton h-10 w-full"></div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
 </div>
 
-<script type="text/babel">
-{% raw %}
-    const { useState, useEffect } = React;
+<div class="fab md:right-8">
+    <button type="button" data-open-transaction data-tooltip="Add transaction">
+        {{ icon("plus", class="icon") }}
+    </button>
+    <button type="button" data-open-report data-tooltip="Generate PDF report">
+        {{ icon("file-text", class="icon") }}
+    </button>
+</div>
 
-    function DateRangePicker() {
-        const [start, setStart] = useState('{{ period.start }}');
-        const [end, setEnd] = useState('{{ period.end }}');
-
-        const handleDateChange = (newStart, newEnd) => {
-            setStart(newStart);
-            setEnd(newEnd);
-
-            const form = document.getElementById('date-range-form');
-            form.querySelector('input[name="start"]').value = newStart;
-            form.querySelector('input[name="end"]').value = newEnd;
-
-            const event = new CustomEvent('dateRangeChanged', {
-                detail: { start: newStart, end: newEnd }
-            });
-            document.getElementById('date-range-picker').dispatchEvent(event);
-        };
-
-        const formatDate = (dateStr) => {
-            const date = new Date(dateStr + 'T00:00:00');
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        };
-
-        const today = new Date();
-        const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-        const thisMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
-
-        return (
-            <div style={{ marginBottom: '1rem' }}>
-                <button
-                    type="button"
-                    className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    onClick={() => {
-                        const newStart = thisMonthStart.toISOString().split('T')[0];
-                        const newEnd = thisMonthEnd.toISOString().split('T')[0];
-                        handleDateChange(newStart, newEnd);
-                    }}
-                >
-                    This Month
-                </button>
-                <button
-                    type="button"
-                    style={{ marginLeft: '0.5rem' }}
-                    className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    onClick={() => {
-                        const newStart = lastMonthStart.toISOString().split('T')[0];
-                        const newEnd = lastMonthEnd.toISOString().split('T')[0];
-                        handleDateChange(newStart, newEnd);
-                    }}
-                >
-                    Last Month
-                </button>
-                <button
-                    type="button"
-                    style={{ marginLeft: '0.5rem' }}
-                    className="px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    onClick={() => {
-                        const start = prompt('Start date (YYYY-MM-DD):', start);
-                        const end = prompt('End date (YYYY-MM-DD):', end);
-                        if (start && end) {
-                            handleDateChange(start, end);
-                        }
-                    }}
-                >
-                    {formatDate(start)} - {formatDate(end)}
+<dialog id="transaction-modal" class="modal">
+    <form id="transaction-form"
+          hx-post="/transactions"
+          hx-swap="none"
+          hx-trigger="submit"
+          hx-on::afterRequest="if(event.detail.successful){ this.reset(); document.getElementById('transaction-modal')?.close(); window.ui?.showToast('Transaction added successfully!'); }"
+          hx-on::responseError="window.ui?.showToast(window.ui?.httpErrorMessage?.(event.detail.xhr) || 'Unable to add transaction', 'error')"
+          class="modal-form space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="space-y-1">
+            <p class="metric-eyebrow">Capture</p>
+            <div class="flex items-center justify-between">
+                <h3 class="text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Add transaction</h3>
+                <button type="button" class="btn btn-ghost btn-icon" data-close-transaction aria-label="Close">
+                    {{ icon("x", class="icon") }}
                 </button>
             </div>
-        );
+            <p class="text-sm text-slate-500 dark:text-slate-400">Adds an entry and refreshes dashboard panels.</p>
+        </div>
+        <div class="separator"></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Date
+                <input type="date" name="date" value="{{ period.end }}" class="input" required>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Amount
+                <input type="text" name="amount" placeholder="12.34" inputmode="decimal" class="input" required>
+            </label>
+        </div>
+        <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+            Category
+            <select name="category_id" class="select" required>
+                <option value="">-- Select category --</option>
+                <optgroup label="Income">
+                    {% for category in categories %}
+                    {% if category.type.value == 'income' %}
+                    <option value="{{ category.id }}">{{ category.name }}</option>
+                    {% endif %}
+                    {% endfor %}
+                </optgroup>
+                <optgroup label="Expense">
+                    {% for category in categories %}
+                    {% if category.type.value == 'expense' %}
+                    <option value="{{ category.id }}">{{ category.name }}</option>
+                    {% endif %}
+                    {% endfor %}
+                </optgroup>
+            </select>
+        </label>
+        <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+            Description
+            <input type="text" name="note" placeholder="e.g., Lunch with Alex" class="input" required>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <input type="checkbox" name="kind" value="adjustment">
+            Mark as adjustment (excluded from charts)
+        </label>
+        <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+            <button type="button" class="btn btn-ghost" data-close-transaction>Cancel</button>
+            <button type="submit" class="btn btn-primary btn-lg">Add Transaction</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="report-modal" class="modal">
+    <form id="report-form" method="post" action="/reports/pdf" target="_blank" class="modal-form space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="space-y-1">
+            <p class="metric-eyebrow">Exports</p>
+            <div class="flex items-center justify-between">
+                <h3 class="text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Generate PDF report</h3>
+                <button type="button" class="btn btn-ghost btn-icon" onclick="document.getElementById('report-modal').close()" aria-label="Close">
+                    {{ icon("x", class="icon") }}
+                </button>
+            </div>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Adjust the date range here without affecting the dashboard.</p>
+        </div>
+        <div class="separator"></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Start date
+                <input type="date" name="start" value="{{ period.start }}" class="input" required>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                End date
+                <input type="date" name="end" value="{{ period.end }}" class="input" required>
+            </label>
+        </div>
+        <div class="flex justify-end">
+            <a href="/reports/builder?period=custom&start={{ period.start }}&end={{ period.end }}"
+               class="text-sm font-semibold text-slate-600 dark:text-slate-300 underline"
+               data-report-advanced>
+                Advanced options
+            </a>
+        </div>
+        <fieldset class="space-y-2">
+            <legend class="text-sm font-semibold text-slate-600 dark:text-slate-300">Sections</legend>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                {% for section in ["summary","category_breakdown","top_categories","trend","recent_transactions","recurring_upcoming"] %}
+                <label class="flex items-center gap-2 bg-slate-100/60 dark:bg-slate-800/40 rounded-xl px-3 py-2">
+                    <input type="checkbox" name="sections" value="{{ section }}" {% if section in ["summary","category_breakdown","recent_transactions"] %}checked{% endif %}>
+                    {{ "Transactions" if section == "recent_transactions" else section.replace("_"," ")|title }}
+                </label>
+                {% endfor %}
+            </div>
+        </fieldset>
+        <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+            <input type="checkbox" name="include_cents" value="true" checked>
+            Include cents in tables
+        </label>
+        <div class="card bg-slate-100/60 dark:bg-slate-800/40 border border-border rounded-xl p-4 text-sm text-slate-600 dark:text-slate-300">
+            <p class="font-semibold mb-1">Reminder</p>
+            <p>The PDF opens in a new tab. Save it locally to archive the snapshot.</p>
+        </div>
+        <div class="flex justify-end gap-3">
+            <button type="button" class="btn btn-ghost" onclick="document.getElementById('report-modal').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-lg">Generate PDF</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+(function () {
+const filterHub = document.getElementById("dashboard-filters");
+const filterForm = document.getElementById("dashboard-filter-form");
+if (!filterHub || !filterForm) return;
+const typeButtons = Array.from(document.querySelectorAll("[data-type-chip]"));
+const periodChips = Array.from(document.querySelectorAll("[data-period-chip]"));
+let rangeApi = null;
+
+function emitFiltersChanged() {
+    const detail = {
+        start: filterForm.elements["start"].value,
+        end: filterForm.elements["end"].value,
+        period: filterForm.elements["period"].value,
+        type: filterForm.elements["type"].value,
+    };
+    if (filterHub) {
+        filterHub.dispatchEvent(new CustomEvent("filtersChanged", { bubbles: true, detail }));
     }
 
-    const container = document.getElementById('date-range-container');
-    if (container) {
-        ReactDOM.render(<DateRangePicker />, container);
+    const params = new URLSearchParams(window.location.search);
+    params.set("period", detail.period);
+    params.set("start", detail.start);
+    params.set("end", detail.end);
+    const nextUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, "", nextUrl);
+    window.ui?.syncNavPeriodLinks?.();
+}
+
+function setTypeFilter(type) {
+    filterForm.elements["type"].value = type;
+    typeButtons.forEach((btn) => {
+        btn.classList.toggle("is-active", btn.dataset.typeChip === type);
+    });
+    emitFiltersChanged();
+}
+
+function syncPeriodChips(slug) {
+    periodChips.forEach((chip) => {
+        chip.classList.toggle("is-active", chip.dataset.periodChip === slug);
+    });
+}
+
+function setPeriod(slug) {
+    const today = new Date();
+    let startDate = null;
+    let endDate = null;
+
+    function toLocalIso(d) {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
     }
-{% endraw %}
+
+    if (slug === "this_month") {
+        startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    } else if (slug === "last_month") {
+        startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+    } else if (slug === "all") {
+        startDate = new Date(1970, 0, 1);
+        endDate = today;
+    } else if (slug === "custom" && rangeApi) {
+        rangeApi.open();
+    }
+
+    filterForm.elements["period"].value = slug;
+    syncPeriodChips(slug);
+
+    if (slug !== "custom" && rangeApi) {
+        rangeApi.close();
+    }
+
+    if (startDate && endDate) {
+        const startStr = toLocalIso(startDate);
+        const endStr = toLocalIso(endDate);
+        window.dashboardFilters.updateRange(startStr, endStr, false);
+    } else if (slug === "custom") {
+        emitFiltersChanged();
+    }
+}
+
+window.dashboardFilters = {
+    updateRange(start, end, syncChips = true) {
+        filterForm.elements["start"].value = start;
+        filterForm.elements["end"].value = end;
+        if (rangeApi) {
+            rangeApi.setRange(start, end);
+        }
+        if (syncChips && filterForm.elements["period"].value !== "custom") {
+            syncPeriodChips(filterForm.elements["period"].value);
+        }
+        emitFiltersChanged();
+    },
+};
+
+function mountDashboardRangePicker() {
+    const host = document.getElementById("date-range-picker");
+    if (!host) return;
+    if (!window.mountDateRangePicker) {
+        window.setTimeout(mountDashboardRangePicker, 50);
+        return;
+    }
+    window.mountDateRangePicker("date-range-picker", {
+        initialStart: filterForm.elements["start"].value,
+        initialEnd: filterForm.elements["end"].value,
+        onApply: (s, e) => window.dashboardFilters.updateRange(s, e),
+        onExpose: (api) => {
+            rangeApi = api;
+        },
+    });
+}
+
+typeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => setTypeFilter(btn.dataset.typeChip));
+});
+
+periodChips.forEach((chip) => {
+    chip.addEventListener("click", () => setPeriod(chip.dataset.periodChip));
+});
+
+syncPeriodChips(filterForm.elements["period"].value);
+mountDashboardRangePicker();
+})();
 </script>
 {% endblock %}

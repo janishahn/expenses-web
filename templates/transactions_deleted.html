@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="space-y-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Trash</p>
+            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Deleted Transactions</h1>
+            <p class="text-slate-500 dark:text-slate-400">Restore entries before they get purged.</p>
+        </div>
+        <a href="/transactions" class="btn btn-secondary btn-sm">Back to transactions</a>
+    </div>
+
+    {% if transactions %}
+    <div class="card shadow-hover">
+        <div class="card-body p-0">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Deleted</th>
+                        <th>Date</th>
+                        <th>Note</th>
+                        <th>Category</th>
+                        <th class="text-right">Amount</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for txn in transactions %}
+                    {% set is_expense = txn.type.value == 'expense' %}
+                    <tr>
+                        <td class="text-xs text-slate-500">{{ txn.deleted_at.strftime('%Y-%m-%d %H:%M') if txn.deleted_at else '-' }}</td>
+                        <td>{{ txn.date }}</td>
+                        <td class="font-medium text-slate-800 dark:text-slate-100">{{ txn.note or "Untitled entry" }}</td>
+                        <td>{{ txn.category.name if txn.category else "Uncategorized" }}</td>
+                        <td class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                            {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
+                        </td>
+                        <td class="text-right">
+                            <form method="post" action="/transactions/{{ txn.id }}/restore">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-primary btn-sm">Restore</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="card shadow-hover text-center space-y-3 p-10">
+        <p class="font-semibold text-slate-800 dark:text-slate-100">No deleted transactions</p>
+        <p class="text-slate-500 dark:text-slate-400">You're all clean.</p>
+        <a href="/transactions" class="btn btn-primary">Go to transactions</a>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}
+

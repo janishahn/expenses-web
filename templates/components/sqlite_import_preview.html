@@ -1,0 +1,158 @@
+<div class="space-y-6">
+    <div class="space-y-2">
+        <div class="flex items-center justify-between gap-3">
+            <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100">Preview</h3>
+            <span class="pill text-xs text-slate-600 dark:text-slate-300">
+                {{ preview.transactions_count }} transactions · {{ preview.recurring_count }} recurring rules
+            </span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="card" data-elevation="0">
+                <div class="card-body space-y-1">
+                    <p class="metric-eyebrow">Date range</p>
+                    <p class="font-semibold text-slate-800 dark:text-slate-100">
+                        {{ preview.min_transaction_date or "—" }} → {{ preview.max_transaction_date or "—" }}
+                    </p>
+                </div>
+            </div>
+            <div class="card" data-elevation="0">
+                <div class="card-body space-y-1">
+                    <p class="metric-eyebrow">Category groups</p>
+                    <p class="font-semibold text-slate-800 dark:text-slate-100">{{ preview.mapping_rows|length }}</p>
+                </div>
+            </div>
+            <div class="card" data-elevation="0">
+                <div class="card-body space-y-1">
+                    <p class="metric-eyebrow">Non-midnight times</p>
+                    <p class="font-semibold text-slate-800 dark:text-slate-100">{{ preview.non_midnight_transaction_times }}</p>
+                </div>
+            </div>
+        </div>
+        {% if preview.warnings %}
+        <ul class="list-disc text-sm text-amber-600 pl-5 space-y-1">
+            {% for w in preview.warnings %}
+            <li>{{ w }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <form hx-post="/admin/import-sqlite/commit"
+          hx-target="#sqlite-status"
+          hx-swap="innerHTML"
+          class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="mapping_count" value="{{ preview.mapping_rows|length }}">
+
+        <div class="card" data-elevation="0">
+            <div class="card-body space-y-3">
+                <h4 class="font-semibold text-slate-800 dark:text-slate-100">Options</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                        <input type="checkbox" name="import_recurring_rules" {% if preview.recurring_count %}checked{% endif %}>
+                        Import recurring rules
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                        <input type="checkbox" name="recurring_auto_post">
+                        Enable auto-post for imported rules
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                        <input type="checkbox" name="link_recurring_transactions" checked>
+                        Link “(Recurring)” transactions to rules
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                        <input type="checkbox" name="preserve_time_in_note" {% if preview.non_midnight_transaction_times %}checked{% endif %}>
+                        Append time-of-day to note (if present)
+                    </label>
+                </div>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Re-running this import can create duplicates for non-recurring transactions.</p>
+            </div>
+        </div>
+
+        <div class="space-y-2">
+            <h4 class="font-semibold text-slate-800 dark:text-slate-100">Category mapping</h4>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Each legacy category is mapped per transaction type (income/expense).</p>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-border">
+            <table class="table text-sm">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Legacy category</th>
+                        <th>Txns</th>
+                        <th>Import as</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in preview.mapping_rows %}
+                    <tr>
+                        <td class="capitalize">{{ row.legacy_type.value }}</td>
+                        <td>{{ row.legacy_category }}</td>
+                        <td>{{ row.transaction_count }}</td>
+                        <td>
+                            <input type="hidden" name="legacy_type_{{ row.idx }}" value="{{ row.legacy_type.value }}">
+                            <input type="hidden" name="legacy_category_{{ row.idx }}" value="{{ row.legacy_category }}">
+                            <select class="input" name="target_{{ row.idx }}">
+                                <option value="discard">
+                                    Discard all: {{ row.legacy_category }}
+                                </option>
+                                <option value="create" {% if not row.suggested_category_id %}selected{% endif %}>
+                                    Create new: {{ row.legacy_category }}
+                                </option>
+                                {% for cat in categories %}
+                                    {% if cat.type == row.legacy_type %}
+                                    <option value="existing:{{ cat.id }}" {% if row.suggested_category_id == cat.id %}selected{% endif %}>
+                                        Map to: {{ cat.name }}
+                                    </option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                            {% if row.suggested_category_name %}
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Suggested match: {{ row.suggested_category_name }}</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if preview.recurring_rows %}
+        <div class="space-y-2">
+            <h4 class="font-semibold text-slate-800 dark:text-slate-100">Recurring rules (legacy)</h4>
+        </div>
+        <div class="overflow-x-auto rounded-xl border border-border">
+            <table class="table text-sm">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Category</th>
+                        <th>Amount</th>
+                        <th>Start</th>
+                        <th>Recurrence</th>
+                        <th>Next (computed)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in preview.recurring_rows %}
+                    <tr>
+                        <td>{{ r.description }}</td>
+                        <td class="capitalize">{{ r.legacy_type.value }}</td>
+                        <td>{{ r.legacy_category }}</td>
+                        <td>{{ r.amount_cents|currency }} €</td>
+                        <td>{{ r.start_date }}</td>
+                        <td>{{ r.recurrence_type }} / {{ r.interval }}</td>
+                        <td>{{ r.computed_next_occurrence or "—" }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary btn-sm">Import</button>
+    </form>
+</div>

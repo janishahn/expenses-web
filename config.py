@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -24,5 +22,10 @@ def get_settings() -> Settings:
     default_db = data_dir / "expenses.db"
     database_url = os.getenv("EXPENSES_DATABASE_URL", f"sqlite:///{default_db}")
     timezone = os.getenv("EXPENSES_TIMEZONE", "Europe/Berlin")
-    csrf_secret = os.getenv("EXPENSES_CSRF_SECRET", "change-me")
-    return Settings(database_url=database_url, timezone=timezone, csrf_secret=csrf_secret)
+    csrf_secret = os.getenv(
+        "EXPENSES_CSRF_SECRET",
+        "ebf511a733bdc213d6ccc715d338ad1c05bef4ad0ab32bb7eb60bb90f382380a",
+    )
+    return Settings(
+        database_url=database_url, timezone=timezone, csrf_secret=csrf_secret
+    )

@@ -4,50 +4,52 @@
     <meta charset="utf-8">
     <title>Expense Report - {{ period.start }} to {{ period.end }}</title>
 </head>
-<body>
-    <header style="text-align: center; margin-bottom: 30px;">
-        <h1>Expense Report</h1>
-        <p>{{ period.start }} - {{ period.end }}</p>
+<body class="report">
+    <header class="header">
+        <div class="header-top">
+            <div>
+                <div class="title">Expense Report</div>
+                <div class="subtitle">
+                    {{ period.start }} — {{ period.end }}
+                    {% if options.transaction_type or options.category_ids %}
+                    <span class="cell-muted">· Filtered</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="meta">
+                {% if generated_at %}
+                Generated {{ generated_at.strftime("%Y-%m-%d %H:%M") }}
+                {% endif %}
+                {% if app_version and app_version != "unknown" %}
+                <div>v{{ app_version }}</div>
+                {% endif %}
+            </div>
+        </div>
         {% if options.notes %}
-        <p><strong>Notes:</strong> {{ options.notes }}</p>
+        <div class="note">
+            <div class="note-label">Notes</div>
+            <div>{{ options.notes }}</div>
+        </div>
         {% endif %}
     </header>
 
     {% if summary %}
     <section class="section">
-        <h2>Summary</h2>
+        <h2 class="section-title">Summary</h2>
         <div class="kpi-grid">
             <div class="kpi-card">
-                <h3>Total Income</h3>
-                <p style="font-size: 18pt; color: green;">{{ summary.total_income|currency(options) }}{{ options.currency_symbol }}</p>
+                <div class="kpi-label">Total Income</div>
+                <div class="kpi-value positive">{{ summary.total_income|currency(options) }}€</div>
             </div>
             <div class="kpi-card">
-                <h3>Total Expenses</h3>
-                <p style="font-size: 18pt; color: red;">{{ summary.total_expenses|currency(options) }}{{ options.currency_symbol }}</p>
+                <div class="kpi-label">Total Expenses</div>
+                <div class="kpi-value negative">{{ summary.total_expenses|currency(options) }}€</div>
             </div>
             <div class="kpi-card">
-                <h3>Balance</h3>
-                <p style="font-size: 18pt; {% if summary.balance >= 0 %}color: green;{% else %}color: red;{% endif %}">{{ summary.balance|currency(options) }}{{ options.currency_symbol }}</p>
-            </div>
-        </div>
-    </section>
-    {% endif %}
-
-    {% if kpis %}
-    <section class="section">
-        <h2>Key Performance Indicators</h2>
-        <div class="kpi-grid">
-            <div class="kpi-card">
-                <h3>Income</h3>
-                <p style="font-size: 16pt;">{{ kpis.income|currency(options) }}{{ options.currency_symbol }}</p>
-            </div>
-            <div class="kpi-card">
-                <h3>Expenses</h3>
-                <p style="font-size: 16pt;">{{ kpis.expenses|currency(options) }}{{ options.currency_symbol }}</p>
-            </div>
-            <div class="kpi-card">
-                <h3>Balance</h3>
-                <p style="font-size: 16pt; {% if kpis.balance >= 0 %}color: green;{% else %}color: red;{% endif %}">{{ kpis.balance|currency(options) }}{{ options.currency_symbol }}</p>
+                <div class="kpi-label">Balance</div>
+                <div class="kpi-value {% if summary.balance >= 0 %}positive{% else %}negative{% endif %}">
+                    {{ summary.balance|currency(options) }}€
+                </div>
             </div>
         </div>
     </section>
@@ -55,58 +57,66 @@
 
     {% if category_breakdown %}
     <section class="section">
-        <h2>Category Breakdown</h2>
-        <div style="margin: 20px 0;">
-            {% set total = category_breakdown | map(attribute='amount_cents') | sum %}
-            {% set colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'] %}
-            <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">
-                {% for cat in category_breakdown %}
-                    {% set color = colors[loop.index0 % colors|length] %}
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 20px; height: 20px; background-color: {{ color }}; border-radius: 3px;"></div>
-                        <span>{{ cat.name }} ({{ "%.1f"|format(cat.percent) }}%)</span>
-                    </div>
-                {% endfor %}
+        <h2 class="section-title">Category Breakdown</h2>
+        {% set colors = ['#2563eb', '#dc2626', '#16a34a', '#f59e0b', '#7c3aed', '#db2777', '#0ea5e9', '#f97316'] %}
+
+        <div class="split">
+            <div class="col">
+                <div class="bars">
+                    {% for cat in category_breakdown %}
+                        {% set color = colors[loop.index0 % colors|length] %}
+                        <div class="bar-row">
+                            <span class="swatch" style="background: {{ color }};"></span>
+                            <span class="bar-name">{{ cat.name }}</span>
+                            <div class="bar-track" aria-hidden="true">
+                                <div class="bar-fill" style="width: {{ "%.1f"|format(cat.percent) }}%; background: {{ color }};"></div>
+                            </div>
+                            <span class="bar-pct">{{ "%.1f"|format(cat.percent) }}%</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th class="cell-right">Amount</th>
+                            <th class="cell-right">Share</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cat in category_breakdown %}
+                        <tr>
+                            <td>{{ cat.name }}</td>
+                            <td class="cell-right">{{ cat.amount_cents|currency(options) }}€</td>
+                            <td class="cell-right">{{ "%.1f"|format(cat.percent) }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Category</th>
-                    <th>Amount</th>
-                    <th>Percentage</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for cat in category_breakdown %}
-                <tr>
-                    <td>{{ cat.name }}</td>
-                    <td>{{ cat.amount_cents|currency(options) }}{{ options.currency_symbol }}</td>
-                    <td>{{ "%.1f"|format(cat.percent) }}%</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
     </section>
     {% endif %}
 
     {% if top_categories %}
     <section class="section">
-        <h2>Top 5 Categories</h2>
+        <h2 class="section-title">Top 5 Categories</h2>
         <table>
             <thead>
                 <tr>
                     <th>Category</th>
-                    <th>Amount</th>
-                    <th>Percentage</th>
+                    <th class="cell-right">Amount</th>
+                    <th class="cell-right">Share</th>
                 </tr>
             </thead>
             <tbody>
                 {% for cat in top_categories %}
                 <tr>
                     <td>{{ cat.name }}</td>
-                    <td>{{ cat.amount_cents|currency(options) }}{{ options.currency_symbol }}</td>
-                    <td>{{ "%.1f"|format(cat.percent) }}%</td>
+                    <td class="cell-right">{{ cat.amount_cents|currency(options) }}€</td>
+                    <td class="cell-right">{{ "%.1f"|format(cat.percent) }}%</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -116,15 +126,16 @@
 
     {% if trend %}
     <section class="section">
-        <h2>Expense Trend</h2>
-        <svg width="700" height="300" viewBox="0 0 700 300">
-            {% set max_amount = trend | map(attribute='amount_cents') | max or 1 %}
+        <h2 class="section-title">Trend</h2>
+        <svg class="chart" width="700" height="300" viewBox="0 0 700 300">
+            {% set max_amount = (trend | map(attribute='amount_cents') | max) or 1 %}
             {% set padding = 50 %}
             {% set chart_width = 600 %}
             {% set chart_height = 200 %}
-            <polyline points="{% for point in trend %}{{ padding + (loop.index0 * chart_width / (trend|length - 1)) }},{{ padding + chart_height - (point.amount_cents / max_amount * chart_height) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="#2563eb" stroke-width="2"/>
+            {% set denom = (trend|length - 1) if trend|length > 1 else 1 %}
+            <polyline points="{% for point in trend %}{{ padding + (loop.index0 * chart_width / denom) }},{{ padding + chart_height - (point.amount_cents / max_amount * chart_height) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="#2563eb" stroke-width="2"/>
             {% for point in trend %}
-                <circle cx="{{ padding + (loop.index0 * chart_width / (trend|length - 1)) }}" cy="{{ padding + chart_height - (point.amount_cents / max_amount * chart_height) }}" r="3" fill="#2563eb"/>
+                <circle cx="{{ padding + (loop.index0 * chart_width / denom) }}" cy="{{ padding + chart_height - (point.amount_cents / max_amount * chart_height) }}" r="3" fill="#2563eb"/>
             {% endfor %}
             <line x1="{{ padding }}" y1="{{ padding }}" x2="{{ padding }}" y2="{{ padding + chart_height }}" stroke="#333" stroke-width="1"/>
             <line x1="{{ padding }}" y1="{{ padding + chart_height }}" x2="{{ padding + chart_width }}" y2="{{ padding + chart_height }}" stroke="#333" stroke-width="1"/>
@@ -134,7 +145,12 @@
 
     {% if recent_transactions %}
     <section class="section">
-        <h2>Recent Transactions ({{ recent_transactions|length }})</h2>
+        <h2 class="section-title">Transactions <span class="cell-muted">({{ recent_transactions|length }})</span></h2>
+        {% if options.show_running_balance and opening_balance_cents is not none %}
+        <div class="subtitle" style="margin-top: -1mm; margin-bottom: 2mm;">
+            Opening balance: <span class="{% if opening_balance_cents >= 0 %}positive{% else %}negative{% endif %}">{{ opening_balance_cents|currency(options) }}€</span>
+        </div>
+        {% endif %}
         <table>
             <thead>
                 <tr>
@@ -142,29 +158,65 @@
                     <th>Type</th>
                     <th>Category</th>
                     <th>Note</th>
-                    <th>Amount</th>
+                    <th class="cell-right">Amount</th>
+                    {% if options.show_running_balance %}
+                    <th class="cell-right">Running balance</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for txn in recent_transactions %}
                 <tr>
-                    <td>{{ txn.date }}</td>
-                    <td>{{ txn.type.value }}</td>
+                    <td class="cell-muted">{{ txn.date }}</td>
+                    <td>
+                        <span class="pill {% if txn.type.value == 'income' %}pill-income{% else %}pill-expense{% endif %}">
+                            {{ txn.type.value }}
+                        </span>
+                    </td>
                     <td>{{ txn.category.name if txn.category else 'N/A' }}</td>
                     <td>{{ txn.note or '' }}</td>
-                    <td style="{% if txn.type.value == 'income' %}color: green;{% else %}color: red;{% endif %}">
-                        {% if txn.type.value == 'income' %}+{% else %}-{% endif %}{{ txn.amount_cents|currency(options) }}{{ options.currency_symbol }}
+                    <td class="cell-right {% if txn.type.value == 'income' %}positive{% else %}negative{% endif %}">
+                        {% if txn.type.value == 'income' %}+{% else %}-{% endif %}{{ txn.amount_cents|currency(options) }}€
+                    </td>
+                    {% if options.show_running_balance %}
+                    <td class="cell-right {% if txn.running_balance_cents >= 0 %}positive{% else %}negative{% endif %}">
+                        {{ txn.running_balance_cents|currency(options) }}€
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if category_subtotals %}
+        <div style="margin-top: 6mm;"></div>
+        <h3 class="section-title" style="font-size: 11pt;">Category subtotals</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Type</th>
+                    <th class="cell-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in category_subtotals %}
+                <tr>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.type.value }}</td>
+                    <td class="cell-right {% if row.type.value == 'income' %}positive{% else %}negative{% endif %}">
+                        {% if row.type.value == 'income' %}+{% else %}-{% endif %}{{ row.amount_cents|currency(options) }}€
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        {% endif %}
     </section>
     {% endif %}
 
     {% if recurring_upcoming %}
     <section class="section">
-        <h2>Upcoming Recurring Transactions</h2>
+        <h2 class="section-title">Upcoming Recurring Transactions</h2>
         <table>
             <thead>
                 <tr>
@@ -172,7 +224,7 @@
                     <th>Type</th>
                     <th>Category</th>
                     <th>Next Occurrence</th>
-                    <th>Amount</th>
+                    <th class="cell-right">Amount</th>
                     <th>Auto-post</th>
                 </tr>
             </thead>
@@ -183,7 +235,7 @@
                     <td>{{ rule.type.value }}</td>
                     <td>{{ rule.category.name if rule.category else 'N/A' }}</td>
                     <td>{{ rule.next_occurrence }}</td>
-                    <td>{{ rule.amount_cents|currency(options) }}{{ options.currency_symbol }}</td>
+                    <td class="cell-right">{{ rule.amount_cents|currency(options) }}€</td>
                     <td>{{ 'Yes' if rule.auto_post else 'No' }}</td>
                 </tr>
                 {% endfor %}
@@ -191,9 +243,5 @@
         </table>
     </section>
     {% endif %}
-
-    <footer style="margin-top: 40px; text-align: center; color: #666; font-size: 9pt;">
-        <p>Expense Tracker</p>
-    </footer>
 </body>
 </html>

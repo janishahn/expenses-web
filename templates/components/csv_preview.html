@@ -1,39 +1,49 @@
-<section>
-    <h3>CSV Preview</h3>
+<div class="space-y-3">
+    <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100">CSV Preview</h3>
+        {% if errors %}
+        <span class="pill text-rose-500">{{ errors|length }} issue{{ 's' if errors|length > 1 }}</span>
+        {% endif %}
+    </div>
     {% if errors %}
-        <div>
-            <strong>Errors:</strong>
-            <ul>
-                {% for error in errors %}
-                <li>{{ error }}</li>
-                {% endfor %}
-            </ul>
-        </div>
+    <ul class="list-disc text-sm text-rose-500 pl-5 space-y-1">
+        {% for error in errors %}
+        <li>{{ error }}</li>
+        {% endfor %}
+    </ul>
     {% endif %}
     {% if rows %}
-    <table>
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Category</th>
-                <th>Amount</th>
-                <th>Note</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for row in rows %}
-            <tr>
-                <td>{{ row.date }}</td>
-                <td>{{ row.type }}</td>
-                <td>{{ row.category }}</td>
-                <td>{{ row.amount_cents|currency }} €</td>
-                <td>{{ row.note or "" }}</td>
-                <td>{{ "OK" if row.category_id else "Missing category" }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <div class="overflow-x-auto rounded-xl border border-border">
+        <table class="table text-sm">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>Note</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in rows %}
+                <tr>
+                    <td>{{ row.date }}</td>
+                    <td>{{ row.type }}</td>
+                    <td>{{ row.category }}</td>
+                    <td>{{ row.amount_cents|currency }} €</td>
+                    <td>{{ row.note or "" }}</td>
+                    <td>
+                        <span class="pill text-xs {% if row.category_id %}badge-positive{% else %}text-rose-500{% endif %}">
+                            {{ "Ready" if row.category_id else "Missing category" }}
+                        </span>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-slate-500 dark:text-slate-400">Upload a CSV to see a structured preview before importing.</p>
     {% endif %}
-</section>
+</div>

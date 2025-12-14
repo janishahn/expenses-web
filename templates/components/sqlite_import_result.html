@@ -1,0 +1,23 @@
+<div class="card shadow-hover">
+    <div class="card-header">
+        <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100">Import complete</h3>
+    </div>
+    <div class="separator"></div>
+    <div class="card-body space-y-2 text-sm text-slate-700 dark:text-slate-200">
+        <p>Imported <span class="font-semibold">{{ result.inserted_transactions }}</span> transactions.</p>
+        <p>Imported <span class="font-semibold">{{ result.imported_recurring_rules }}</span> recurring rules.</p>
+        {% if result.discarded_transactions %}
+        <p>Discarded <span class="font-semibold">{{ result.discarded_transactions }}</span> transactions via category mapping.</p>
+        {% endif %}
+        {% if result.discarded_recurring_rules %}
+        <p>Discarded <span class="font-semibold">{{ result.discarded_recurring_rules }}</span> recurring rules via category mapping.</p>
+        {% endif %}
+        {% if result.skipped_recurring_duplicates %}
+        <p>Skipped <span class="font-semibold">{{ result.skipped_recurring_duplicates }}</span> duplicate recurring occurrences.</p>
+        {% endif %}
+        {% if result.time_appended_to_notes %}
+        <p>Appended time-of-day to <span class="font-semibold">{{ result.time_appended_to_notes }}</span> notes.</p>
+        {% endif %}
+        <p class="text-xs text-slate-500 dark:text-slate-400">Monthly rollups were rebuilt after import.</p>
+    </div>
+</div>

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="space-y-6">
+    <div class="space-y-2">
+        <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Admin</p>
+        <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Import</h1>
+        <p class="text-slate-500 dark:text-slate-400">Import transactions from CSV or from a legacy SQLite database.</p>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div class="card shadow-hover">
+            <div class="card-header">
+                <div>
+                    <p class="metric-eyebrow">Import</p>
+                    <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">CSV</h2>
+                </div>
+            </div>
+            <div class="separator"></div>
+            <div class="card-body space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <form hx-post="/transactions/import/preview" hx-target="#csv-preview" hx-swap="innerHTML" enctype="multipart/form-data" class="space-y-3 p-4 border border-dashed border-border rounded-xl">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <p class="font-semibold text-sm text-slate-600 dark:text-slate-300">Preview CSV</p>
+                        <input type="file" name="file" accept=".csv" class="input">
+                        <button type="submit" class="btn btn-secondary btn-sm">Preview</button>
+                    </form>
+                    <form hx-post="/transactions/import/commit" hx-target="#csv-status" hx-swap="innerHTML" enctype="multipart/form-data" class="space-y-3 p-4 border border-dashed border-border rounded-xl">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <p class="font-semibold text-sm text-slate-600 dark:text-slate-300">Import CSV</p>
+                        <input type="file" name="file" accept=".csv" class="input">
+                        <button type="submit" class="btn btn-primary btn-sm">Import</button>
+                    </form>
+                </div>
+                <div id="csv-preview"></div>
+                <div id="csv-status"></div>
+            </div>
+        </div>
+
+        <div class="card shadow-hover">
+            <div class="card-header">
+                <div>
+                    <p class="metric-eyebrow">Import</p>
+                    <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Legacy SQLite</h2>
+                </div>
+            </div>
+            <div class="separator"></div>
+            <div class="card-body space-y-4">
+                <form hx-post="/admin/import-sqlite/preview"
+                      hx-target="#sqlite-preview"
+                      hx-swap="innerHTML"
+                      enctype="multipart/form-data"
+                      class="space-y-3 p-4 border border-dashed border-border rounded-xl">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <p class="font-semibold text-sm text-slate-600 dark:text-slate-300">Preview SQLite</p>
+                    <input type="file" name="file" accept=".db" class="input">
+                    <button type="submit" class="btn btn-secondary btn-sm">Preview</button>
+                </form>
+                <div id="sqlite-preview"></div>
+                <div id="sqlite-status"></div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+

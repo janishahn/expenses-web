@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import date, datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -8,7 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from config import get_settings
-from models import IntervalUnit, MonthDayPolicy, RecurringRule, Transaction, TransactionKind
+from models import (
+    IntervalUnit,
+    MonthDayPolicy,
+    RecurringRule,
+    Transaction,
+    TransactionKind,
+)
 
 
 def local_today() -> date:
@@ -38,11 +42,20 @@ def _add_months(
 
     dim = days_in_month(year, month)
     if policy == MonthDayPolicy.skip and desired_day > dim:
-        while desired_day > dim:
+        max_skips = 24  # Prevent infinite loops - max 2 years of skipping
+        skips = 0
+        while desired_day > dim and skips < max_skips:
             total_months += 1
             year = base.year + total_months // 12
             month = total_months % 12 + 1
             dim = days_in_month(year, month)
+            skips += 1
+
+        if skips >= max_skips:
+            raise ValueError(
+                f"Cannot find suitable month for day {desired_day} after {max_skips} attempts"
+            )
+
     if desired_day > dim:
         day = dim
     else:
@@ -57,7 +70,9 @@ def calculate_next_date(rule: RecurringRule, from_date: date) -> date:
         next_date = from_date + timedelta(weeks=rule.interval_count)
     elif rule.interval_unit == IntervalUnit.month:
         anchor_day = (
-            from_date.day if rule.month_day_policy == MonthDayPolicy.carry_forward else rule.anchor_date.day
+            from_date.day
+            if rule.month_day_policy == MonthDayPolicy.carry_forward
+            else rule.anchor_date.day
         )
         next_date = _add_months(
             from_date,
@@ -74,8 +89,17 @@ def calculate_next_date(rule: RecurringRule, from_date: date) -> date:
         )
 
     if rule.skip_weekends:
-        while next_date.weekday() >= 5:
+        max_skip_days = 14  # Prevent infinite loops - max 2 weeks of skipping
+        skip_count = 0
+        while next_date.weekday() >= 5 and skip_count < max_skip_days:
             next_date += timedelta(days=1)
+            skip_count += 1
+
+        # If we hit the limit, log a warning and use the original date
+        if skip_count >= max_skip_days:
+            print(
+                f"Warning: Weekend skip limit reached for rule {rule.name}, using weekday date"
+            )
     return next_date
 
 
@@ -145,5 +169,12 @@ class RecurringEngine:
             kind=TransactionKind.normal,
         )
         self.session.add(txn)
-        update_monthly_rollup(self.session, rule.user_id, occurrence_date, rule.type, rule.amount_cents, increment=True)
+        update_monthly_rollup(
+            self.session,
+            rule.user_id,
+            occurrence_date,
+            rule.type,
+            rule.amount_cents,
+            increment=True,
+        )
         return True

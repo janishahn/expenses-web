@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import date, datetime
 from enum import Enum
 from typing import Optional
@@ -60,13 +58,19 @@ class Category(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    type: Mapped[TransactionType] = mapped_column(SAEnum(TransactionType), nullable=False)
+    type: Mapped[TransactionType] = mapped_column(
+        SAEnum(TransactionType), nullable=False
+    )
     color: Mapped[Optional[str]] = mapped_column(String(7))
     order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
-    transactions: Mapped[list["Transaction"]] = relationship("Transaction", back_populates="category")
-    recurring_rules: Mapped[list["RecurringRule"]] = relationship("RecurringRule", back_populates="category")
+    transactions: Mapped[list["Transaction"]] = relationship(
+        "Transaction", back_populates="category"
+    )
+    recurring_rules: Mapped[list["RecurringRule"]] = relationship(
+        "RecurringRule", back_populates="category"
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "type", "name", name="uq_category_user_type_name"),
@@ -79,17 +83,29 @@ class Transaction(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     date: Mapped[date] = mapped_column(Date, nullable=False)
-    type: Mapped[TransactionType] = mapped_column(SAEnum(TransactionType), nullable=False)
-    kind: Mapped[TransactionKind] = mapped_column(SAEnum(TransactionKind), default=TransactionKind.normal, nullable=False)
+    type: Mapped[TransactionType] = mapped_column(
+        SAEnum(TransactionType), nullable=False
+    )
+    kind: Mapped[TransactionKind] = mapped_column(
+        SAEnum(TransactionKind), default=TransactionKind.normal, nullable=False
+    )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.id"), nullable=False
+    )
     note: Mapped[Optional[str]] = mapped_column(Text)
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    origin_rule_id: Mapped[Optional[int]] = mapped_column(ForeignKey("recurring_rules.id"))
+    origin_rule_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("recurring_rules.id")
+    )
     occurrence_date: Mapped[Optional[date]] = mapped_column(Date)
 
-    category: Mapped["Category"] = relationship("Category", back_populates="transactions")
-    origin_rule: Mapped[Optional["RecurringRule"]] = relationship("RecurringRule", back_populates="transactions")
+    category: Mapped["Category"] = relationship(
+        "Category", back_populates="transactions"
+    )
+    origin_rule: Mapped[Optional["RecurringRule"]] = relationship(
+        "RecurringRule", back_populates="transactions"
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -111,11 +127,17 @@ class RecurringRule(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     name: Mapped[Optional[str]] = mapped_column(String(120))
-    type: Mapped[TransactionType] = mapped_column(SAEnum(TransactionType), nullable=False)
+    type: Mapped[TransactionType] = mapped_column(
+        SAEnum(TransactionType), nullable=False
+    )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
-    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.id"), nullable=False
+    )
     anchor_date: Mapped[date] = mapped_column(Date, nullable=False)
-    interval_unit: Mapped[IntervalUnit] = mapped_column(SAEnum(IntervalUnit), nullable=False)
+    interval_unit: Mapped[IntervalUnit] = mapped_column(
+        SAEnum(IntervalUnit), nullable=False
+    )
     interval_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     next_occurrence: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[Optional[date]] = mapped_column(Date)
@@ -127,8 +149,12 @@ class RecurringRule(Base, TimestampMixin):
         nullable=False,
     )
 
-    category: Mapped["Category"] = relationship("Category", back_populates="recurring_rules")
-    transactions: Mapped[list["Transaction"]] = relationship("Transaction", back_populates="origin_rule")
+    category: Mapped["Category"] = relationship(
+        "Category", back_populates="recurring_rules"
+    )
+    transactions: Mapped[list["Transaction"]] = relationship(
+        "Transaction", back_populates="origin_rule"
+    )
 
     __table_args__ = (
         CheckConstraint("interval_count > 0", name="ck_rule_interval_positive"),
@@ -148,3 +174,28 @@ class MonthlyRollup(Base, TimestampMixin):
     month: Mapped[int] = mapped_column(Integer, nullable=False)
     income_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     expense_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class Budget(Base, TimestampMixin):
+    __tablename__ = "budgets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    category_id: Mapped[Optional[int]] = mapped_column(ForeignKey("categories.id"))
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    category: Mapped[Optional["Category"]] = relationship("Category")
+
+    __table_args__ = (
+        CheckConstraint("amount_cents >= 0", name="ck_budget_amount_positive"),
+        UniqueConstraint(
+            "user_id",
+            "year",
+            "month",
+            "category_id",
+            name="uq_budget_user_month_category",
+        ),
+        Index("ix_budget_user_month", "user_id", "year", "month"),
+    )

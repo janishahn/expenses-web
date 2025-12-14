@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,18 +9,33 @@ from models import IntervalUnit, MonthDayPolicy, TransactionKind, TransactionTyp
 class ReportOptions(BaseModel):
     start: date
     end: date
-    sections: list[str] = Field(default_factory=lambda: ["summary", "kpis", "category_breakdown", "recent_transactions"])
-    currency_symbol: str = "€"
-    page_size: str = "A4"
+    sections: list[str] = Field(
+        default_factory=lambda: [
+            "summary",
+            "category_breakdown",
+            "recent_transactions",
+        ]
+    )
     include_cents: bool = True
-    recent_transactions_count: int = 50
     notes: Optional[str] = None
+    transaction_type: Optional[TransactionType] = None
+    category_ids: Optional[list[int]] = None
+    include_adjustments: bool = False
+    transactions_sort: Literal["newest", "oldest"] = "newest"
+    show_running_balance: bool = False
+    include_category_subtotals: bool = False
+
+
+class BudgetIn(BaseModel):
+    year: int = Field(..., ge=1970, le=3000)
+    month: int = Field(..., ge=1, le=12)
+    category_id: Optional[int] = None
+    amount_cents: int = Field(..., ge=0)
 
 
 class CategoryIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     type: TransactionType
-    color: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
     order: int = 0
 
 
@@ -32,7 +45,7 @@ class TransactionIn(BaseModel):
     kind: TransactionKind = TransactionKind.normal
     amount_cents: int = Field(..., ge=0)
     category_id: int
-    note: Optional[str]
+    note: str = Field(..., min_length=1, max_length=200)
 
 
 class RecurringRuleIn(BaseModel):

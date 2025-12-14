@@ -1,3 +1,8 @@
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -5,10 +10,34 @@ build/
 dist/
 wheels/
 *.egg-info
+.mypy_cache/
 
-# Virtual environments
-.venv
+# Test / lint caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Implementation plans
 implementation_plan*.md
 overview.md
+
+# Virtual environments
+.venv
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Local runtime data (SQLite + imports)
+data/*.db
+data/*.db-*
+data/imports/
+
+# Local agent state
+.claude/
+
+# Agent instructions
+CLAUDE.md
+AGENTS.md

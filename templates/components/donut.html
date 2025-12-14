@@ -1,10 +1,29 @@
-<section>
-    <h3>Category Breakdown</h3>
-    <ul>
-        {% for row in breakdown %}
-        <li>{{ row.name }} — {{ row.amount_cents|currency }} € ({{ "%.1f"|format(row.percent) }}%)</li>
-        {% else %}
-        <li>No expenses this period.</li>
-        {% endfor %}
-    </ul>
-</section>
+{% from "components/_donut_chart.html" import render_donut %}
+
+<div id="donut-panel"
+     hx-get="/components/category-donut"
+     hx-trigger="transactions-changed from:body, filtersChanged from:#dashboard-filters"
+     hx-swap="outerHTML"
+     hx-include="#dashboard-filter-form"
+     hx-indicator=".donut-indicator">
+  {% if has_any_transactions %}
+  <div class="card shadow-hover">
+    <div class="card-body donut-body {% if mode == 'both' %}donut-body--both{% endif %}">
+      {% if mode == "both" %}
+        {{ render_donut(expense_breakdown, "Expenses", "No expenses in this period") }}
+        {{ render_donut(income_breakdown, "Income", "No income in this period") }}
+
+      {% elif mode == "expense-only" %}
+        {{ render_donut(expense_breakdown, "Expenses", "No expenses in this period") }}
+
+      {% elif mode == "income-only" %}
+        {{ render_donut(income_breakdown, "Income", "No income in this period") }}
+
+      {% else %}
+        {{ render_donut(breakdown, "Expenses", "No expenses to chart") }}
+
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>

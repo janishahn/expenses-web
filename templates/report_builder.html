@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="space-y-6 max-w-4xl mx-auto">
+    <div class="space-y-2">
+        <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Exports</p>
+        <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">PDF report</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">Build a report for a specific period and optional filters. Opens in a new tab.</p>
+    </div>
+
+    <form method="post" action="/reports/pdf" target="_blank" class="card p-6 pb-8 space-y-7">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Start date
+                <input type="date" name="start" value="{{ period.start }}" class="input" required>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                End date
+                <input type="date" name="end" value="{{ period.end }}" class="input" required>
+            </label>
+        </div>
+
+        <div class="separator"></div>
+
+        <fieldset class="space-y-4">
+            <legend class="text-sm font-semibold text-slate-600 dark:text-slate-300">Transactions</legend>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Type
+                    <select name="transaction_type" class="select">
+                        <option value="">All</option>
+                        <option value="income">Income</option>
+                        <option value="expense">Expense</option>
+                    </select>
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Sort
+                    <select name="transactions_sort" class="select" data-report-sort>
+                        <option value="newest" selected>Newest first</option>
+                        <option value="oldest">Oldest first</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <label class="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                    <input type="checkbox" name="include_adjustments" value="true" class="mt-0.5">
+                    <span>
+                        <span class="font-semibold">Include adjustments</span>
+                        <span class="block mt-1 text-xs text-slate-500 dark:text-slate-400">KPIs/charts still exclude adjustments.</span>
+                    </span>
+                </label>
+                <label class="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                    <input type="checkbox" name="show_running_balance" value="true" class="mt-0.5" data-report-running>
+                    <span>
+                        <span class="font-semibold">Show running balance</span>
+                        <span class="block mt-1 text-xs text-slate-500 dark:text-slate-400">Forces oldest-first sorting.</span>
+                    </span>
+                </label>
+                <label class="flex items-start gap-2 text-slate-600 dark:text-slate-300">
+                    <input type="checkbox" name="include_category_subtotals" value="true" class="mt-0.5">
+                    <span>
+                        <span class="font-semibold">Include category subtotals</span>
+                        <span class="block mt-1 text-xs text-slate-500 dark:text-slate-400">Adds a totals table after transactions.</span>
+                    </span>
+                </label>
+            </div>
+
+            <div class="card bg-slate-100/60 dark:bg-slate-800/40 border border-border rounded-xl p-4 space-y-4">
+                <div class="flex items-center justify-between gap-3">
+                    <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">Categories</p>
+                    <div class="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-300">
+                        <label class="flex items-center gap-2">
+                            <input type="radio" name="category_mode" value="all" checked data-category-mode>
+                            All
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="radio" name="category_mode" value="selected" data-category-mode>
+                            Selected
+                        </label>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3" data-category-panel>
+                    <div class="space-y-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Income</p>
+                        <div class="grid grid-cols-1 gap-2 text-sm">
+                            {% for category in categories %}
+                            {% if category.type.value == 'income' %}
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" name="category_ids" value="{{ category.id }}" data-category-checkbox>
+                                {{ category.name }}
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Expense</p>
+                        <div class="grid grid-cols-1 gap-2 text-sm">
+                            {% for category in categories %}
+                            {% if category.type.value == 'expense' %}
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" name="category_ids" value="{{ category.id }}" data-category-checkbox>
+                                {{ category.name }}
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <p class="text-xs leading-relaxed text-slate-500 dark:text-slate-400">Pick individual categories to filter the report. Selecting all categories is treated the same as “All”.</p>
+            </div>
+        </fieldset>
+
+        <div class="separator"></div>
+
+        <fieldset class="space-y-4">
+            <legend class="text-sm font-semibold text-slate-600 dark:text-slate-300">Sections</legend>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                {% for section in ["summary","category_breakdown","top_categories","trend","recent_transactions","recurring_upcoming"] %}
+                <label class="flex items-center gap-2 bg-slate-100/60 dark:bg-slate-800/40 rounded-xl px-3 py-2">
+                    <input type="checkbox" name="sections" value="{{ section }}" {% if section in ["summary","category_breakdown","recent_transactions"] %}checked{% endif %}>
+                    {{ "Transactions" if section == "recent_transactions" else section.replace("_"," ")|title }}
+                </label>
+                {% endfor %}
+            </div>
+        </fieldset>
+
+        <div class="separator"></div>
+
+        <div class="space-y-6">
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input type="checkbox" name="include_cents" value="true" checked>
+                Include cents in tables
+            </label>
+
+            <div class="space-y-2">
+                <label class="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Notes (optional)
+                </label>
+                <textarea name="notes" rows="3" class="textarea" placeholder="Add a short note to include at the top of the PDF."></textarea>
+            </div>
+        </div>
+
+        <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2">
+            <a class="btn btn-ghost" href="/?period={{ period.slug }}&start={{ period.start }}&end={{ period.end }}">Back to dashboard</a>
+            <button type="submit" class="btn btn-primary btn-lg">Generate PDF</button>
+        </div>
+    </form>
+</section>
+
+<script>
+(function () {
+    const modeRadios = Array.from(document.querySelectorAll("[data-category-mode]"));
+    const checkboxes = Array.from(document.querySelectorAll("[data-category-checkbox]"));
+    const running = document.querySelector("[data-report-running]");
+    const sortSelect = document.querySelector("[data-report-sort]");
+
+    function setMode(value) {
+        const radio = modeRadios.find((r) => r.value === value);
+        if (radio) {
+            radio.checked = true;
+        }
+    }
+
+    function checkedCount() {
+        return checkboxes.filter((cb) => cb.checked).length;
+    }
+
+    function syncFromMode() {
+        const mode = modeRadios.find((r) => r.checked)?.value;
+        if (mode === "all") {
+            checkboxes.forEach((cb) => {
+                cb.checked = false;
+            });
+        }
+    }
+
+    function syncFromCheckboxes() {
+        if (!checkboxes.length) return;
+        const count = checkedCount();
+        if (count === 0) {
+            setMode("all");
+            return;
+        }
+        if (count === checkboxes.length) {
+            setMode("all");
+            checkboxes.forEach((cb) => {
+                cb.checked = false;
+            });
+            return;
+        }
+        setMode("selected");
+    }
+
+    function syncRunningBalance() {
+        if (!running || !sortSelect) return;
+        if (running.checked) {
+            sortSelect.value = "oldest";
+            sortSelect.disabled = true;
+        } else {
+            sortSelect.disabled = false;
+        }
+    }
+
+    modeRadios.forEach((r) => r.addEventListener("change", () => {
+        syncFromMode();
+    }));
+    checkboxes.forEach((cb) => cb.addEventListener("change", () => {
+        syncFromCheckboxes();
+    }));
+    running?.addEventListener("change", syncRunningBalance);
+
+    syncFromMode();
+    syncRunningBalance();
+})();
+</script>
+{% endblock %}

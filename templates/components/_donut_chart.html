@@ -1,0 +1,59 @@
+{% macro render_donut(breakdown, title, empty_message) %}
+{% set palette = [
+    "#4e79a7",
+    "#f28e2b",
+    "#e15759",
+    "#76b7b2",
+    "#59a14f",
+    "#edc948",
+    "#b07aa1",
+    "#ff9da7",
+    "#9c755f",
+    "#bab0ac"
+] %}
+
+{% from "macros.html" import icon %}
+
+<div class="donut-section">
+  <h3 class="donut-title text-lg font-semibold text-slate-800 dark:text-slate-100">{{ title }}</h3>
+  {% if breakdown %}
+    {% set ns = namespace(start=0, segments=[]) %}
+    {% for row in breakdown %}
+        {% set color = palette[loop.index0 % palette|length] %}
+        {% set end = 100 if loop.last else (ns.start + row.percent) %}
+        {% set ns.segments = ns.segments + [color ~ " " ~ ns.start ~ "% " ~ end ~ "%"] %}
+        {% set ns.start = end %}
+    {% endfor %}
+    {% set donut_style = "background: conic-gradient(" ~ ns.segments|join(', ') ~ ");" %}
+
+    <div class="grid gap-7 xl:grid-cols-[minmax(0,260px)_1fr] items-center">
+        <div class="flex justify-center">
+            <div class="donut" style="{{ donut_style }}"></div>
+        </div>
+        <div class="space-y-2">
+            {% for row in breakdown %}
+            {% set color = palette[loop.index0 % palette|length] %}
+            <div class="legend-item">
+                <div class="flex items-center gap-3">
+                    <span class="legend-dot" style="background: {{ color }}"></span>
+                    <div>
+                        <p class="font-medium text-slate-800 dark:text-slate-100">{{ row.name }}</p>
+                        <p class="text-sm text-slate-500 dark:text-slate-400">{{ "%.1f"|format(row.percent) }}%</p>
+                    </div>
+                </div>
+                <span class="tabular font-semibold text-slate-700 dark:text-slate-200">
+                    {{ row.amount_cents|currency }} €
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+  {% else %}
+    <div class="empty-state">
+        {{ icon("pie-chart", size=48) }}
+        <p class="text-lg font-semibold text-slate-700 dark:text-slate-200">{{ empty_message }}</p>
+        <p class="text-sm">Add a transaction to see category insights.</p>
+    </div>
+  {% endif %}
+</div>
+{% endmacro %}

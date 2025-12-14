@@ -1,167 +1,247 @@
 {% extends "base.html" %}
 {% block content %}
-<section>
-    <h1>Recurring Rules</h1>
-    <form method="post" action="/recurring">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label>Name
-            <input type="text" name="name">
-        </label>
-        <label>Type
-            <select name="type">
-                {% for t in TransactionType %}
-                <option value="{{ t.value }}">{{ t.value.title() }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <label>Amount
-            <input type="text" name="amount" required>
-        </label>
-        <label>Category
-            <select name="category_id">
-                {% for category in categories %}
-                <option value="{{ category.id }}">{{ category.name }} ({{ category.type.value }})</option>
-                {% endfor %}
-            </select>
-        </label>
-        <label>Anchor Date
-            <input type="date" name="anchor_date" required>
-        </label>
-        <label>Interval Unit
-            <select name="interval_unit">
-                {% for unit in IntervalUnit %}
-                <option value="{{ unit.value }}">{{ unit.value.title() }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <label>Interval Count
-            <input type="number" min="1" name="interval_count" value="1">
-        </label>
-        <label>Next Occurrence
-            <input type="date" name="next_occurrence" required>
-        </label>
-        <label>End Date
-            <input type="date" name="end_date">
-        </label>
-        <label>Month-day Policy
-            <select name="month_day_policy">
-                {% for policy in MonthDayPolicy %}
-                <option value="{{ policy.value }}">{{ policy.value.replace('_',' ').title() }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <label>
-            <input type="checkbox" name="auto_post" checked> Auto-post
-        </label>
-        <label>
-            <input type="checkbox" name="skip_weekends"> Skip weekends
-        </label>
-        <button class="button" type="submit">Create Rule</button>
-    </form>
-</section>
+<section class="space-y-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Automation</p>
+            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Recurring Rules</h1>
+            <p class="text-slate-500 dark:text-slate-400">Keep your predictable cashflow on schedule.</p>
+        </div>
+        <div class="flex gap-3">
+            <button type="button" class="btn btn-primary btn-lg" data-open-rule-modal>Add rule</button>
+        </div>
+    </div>
 
-<section id="recurring-list">
-    <table>
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Category</th>
-                <th>Next</th>
-                <th>Amount</th>
-                <th>Auto</th>
-                <th>View</th>
-                <th>Edit</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for rule in rules %}
-            <tr>
-                <td>{{ rule.name or "Unnamed" }}</td>
-                <td>{{ rule.category.name if rule.category else "-" }}</td>
-                <td>{{ rule.next_occurrence }}</td>
-                <td>{{ rule.amount_cents|currency }} €</td>
-                <td>
-                    <form hx-post="/recurring/{{ rule.id }}/toggle" hx-swap="none">
+    {% if rules %}
+    <div class="grid grid-cols-1 gap-4">
+        {% for rule in rules %}
+        <article class="card shadow-hover">
+            <div class="card-body flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <p class="metric-eyebrow">{{ rule.category.name if rule.category else "Uncategorized" }}</p>
+                    <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100">{{ rule.amount_cents|currency }} €</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">
+                        Every {{ rule.interval_count }} {{ rule.interval_unit.value.replace('_',' ') }} • Next run {{ rule.next_occurrence }}
+                    </p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Anchor: {{ rule.anchor_date }} • Policy: {{ rule.month_day_policy.value.replace('_',' ').title() }}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <form hx-post="/recurring/{{ rule.id }}/toggle" hx-swap="none" class="flex items-center gap-2">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="auto_post" value="{{ 'false' if rule.auto_post else 'true' }}">
-                        <button class="button secondary" type="submit">
-                            {{ "Disable" if rule.auto_post else "Enable" }}
+                        <span class="text-xs text-slate-500">{{ "Auto-post" }}</span>
+                        <button type="submit" class="btn btn-secondary btn-sm">
+                            {{ "On" if rule.auto_post else "Off" }}
                         </button>
                     </form>
-                </td>
-                <td>
-                    <a class="button secondary" href="/recurring/{{ rule.id }}/occurrences">Occurrences</a>
-                </td>
-                <td>
-                    <details>
-                        <summary>Open</summary>
-                        <form method="post" action="/recurring/{{ rule.id }}">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <label>Name
-                                <input type="text" name="name" value="{{ rule.name or '' }}">
-                            </label>
-                            <label>Type
-                                <select name="type">
-                                    {% for t in TransactionType %}
-                                    <option value="{{ t.value }}" {% if rule.type == t %}selected{% endif %}>{{ t.value.title() }}</option>
-                                    {% endfor %}
-                                </select>
-                            </label>
-                            <label>Amount
-                                <input type="text" name="amount" value="{{ '%.2f' % (rule.amount_cents / 100) }}">
-                            </label>
-                            <label>Category
-                                <select name="category_id">
-                                    {% for category in categories %}
-                                    <option value="{{ category.id }}" {% if rule.category_id == category.id %}selected{% endif %}>
-                                        {{ category.name }} ({{ category.type.value }})
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </label>
-                            <label>Anchor Date
-                                <input type="date" name="anchor_date" value="{{ rule.anchor_date }}">
-                            </label>
-                            <label>Interval Unit
-                                <select name="interval_unit">
-                                    {% for unit in IntervalUnit %}
-                                    <option value="{{ unit.value }}" {% if rule.interval_unit == unit %}selected{% endif %}>
-                                        {{ unit.value.title() }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </label>
-                            <label>Interval Count
-                                <input type="number" name="interval_count" value="{{ rule.interval_count }}">
-                            </label>
-                            <label>Next Occurrence
-                                <input type="date" name="next_occurrence" value="{{ rule.next_occurrence }}">
-                            </label>
-                            <label>End Date
-                                <input type="date" name="end_date" value="{{ rule.end_date or '' }}">
-                            </label>
-                            <label>Month-day Policy
-                                <select name="month_day_policy">
-                                    {% for policy in MonthDayPolicy %}
-                                    <option value="{{ policy.value }}" {% if rule.month_day_policy == policy %}selected{% endif %}>
-                                        {{ policy.value.replace('_',' ').title() }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </label>
-                            <label>
-                                <input type="checkbox" name="auto_post" {% if rule.auto_post %}checked{% endif %}> Auto-post
-                            </label>
-                            <label>
-                                <input type="checkbox" name="skip_weekends" {% if rule.skip_weekends %}checked{% endif %}> Skip weekends
-                            </label>
-                            <button class="button secondary" type="submit">Save</button>
-                        </form>
-                    </details>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+                    <a href="/recurring/{{ rule.id }}/occurrences" class="btn btn-ghost btn-icon" data-tooltip="Upcoming occurrences">
+                        {{ icon("calendar", class="icon") }}
+                    </a>
+                    <button type="button"
+                            class="btn btn-ghost btn-icon"
+                            data-rule-edit
+                            data-rule-id="{{ rule.id }}"
+                            data-rule-name="{{ rule.name or '' }}"
+                            data-rule-type="{{ rule.type.value }}"
+                            data-rule-amount="{{ '%.2f' % (rule.amount_cents / 100) }}"
+                            data-rule-category="{{ rule.category_id }}"
+                            data-rule-anchor="{{ rule.anchor_date }}"
+                            data-rule-interval-unit="{{ rule.interval_unit.value }}"
+                            data-rule-interval-count="{{ rule.interval_count }}"
+                            data-rule-next="{{ rule.next_occurrence }}"
+                            data-rule-end="{{ rule.end_date or '' }}"
+                            data-rule-policy="{{ rule.month_day_policy.value }}"
+                            data-rule-auto="{{ 'true' if rule.auto_post else 'false' }}"
+                            data-rule-weekends="{{ 'true' if rule.skip_weekends else 'false' }}">
+                        {{ icon("pencil", class="icon") }}
+                    </button>
+                    <form method="post" action="/recurring/{{ rule.id }}/delete" class="inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete rule">
+                            {{ icon("trash-2", class="icon") }}
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="card-footer flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span class="pill">{{ rule.type.value|title }}</span>
+                <span class="pill">{{ "Auto" if rule.auto_post else "Manual" }}</span>
+                {% if rule.skip_weekends %}
+                <span class="pill">Skips weekends</span>
+                {% endif %}
+                {% if rule.end_date %}
+                <span class="pill">Ends {{ rule.end_date }}</span>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card shadow-hover text-center p-10 space-y-3">
+        {{ icon("repeat", class="mx-auto icon") }}
+        <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100">No rules yet</h2>
+        <p class="text-slate-500 dark:text-slate-400">Set up your first recurring transaction to automate predictable cashflow.</p>
+        <button type="button" class="btn btn-primary" data-open-rule-modal>Create a rule</button>
+    </div>
+    {% endif %}
+
+    <div class="ghost-card filter-bar flex-col sm:flex-row gap-4 text-xs text-slate-500 dark:text-slate-400">
+        <div class="flex items-center gap-2">
+            <span class="pill">Snap to start</span>
+            Moves the occurrence to the start of the month when the anchor exceeds month length.
+        </div>
+        <div class="filter-divider hidden sm:block"></div>
+        <div class="flex items-center gap-2">
+            <span class="pill">Snap to end</span>
+            Pushes the entry to the final day to keep cadence.
+        </div>
+    </div>
 </section>
+
+<dialog id="rule-modal">
+    <form id="rule-form" method="post" action="/recurring" data-create-action="/recurring" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="metric-eyebrow">Editor</p>
+                <h3 class="text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100" id="rule-modal-title">Add recurring rule</h3>
+            </div>
+            <button type="button" class="btn btn-ghost btn-icon" onclick="document.getElementById('rule-modal').close()" aria-label="Close">
+                {{ icon("x", class="icon") }}
+            </button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Name
+                <input type="text" name="name" class="input" placeholder="e.g., Rent">
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Type
+                <select name="type" class="select">
+                    {% for t in TransactionType %}
+                    <option value="{{ t.value }}">{{ t.value.title() }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Amount
+                <input type="text" name="amount" class="input" required>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Category
+                <select name="category_id" class="select">
+                    {% for category in categories %}
+                    <option value="{{ category.id }}">{{ category.name }} ({{ category.type.value|title }})</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Anchor date
+                <input type="date" name="anchor_date" class="input" required>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Next occurrence
+                <input type="date" name="next_occurrence" class="input" required>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Interval unit
+                <select name="interval_unit" class="select">
+                    {% for unit in IntervalUnit %}
+                    <option value="{{ unit.value }}">{{ unit.value.replace('_',' ').title() }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Interval count
+                <input type="number" name="interval_count" min="1" value="1" class="input">
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                End date
+                <input type="date" name="end_date" class="input">
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Month-day policy
+                <select name="month_day_policy" class="select">
+                    {% for policy in MonthDayPolicy %}
+                    <option value="{{ policy.value }}">{{ policy.value.replace('_',' ').title() }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </div>
+        <div class="flex flex-wrap gap-4">
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input type="checkbox" name="auto_post" checked>
+                Auto-post to ledger
+            </label>
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input type="checkbox" name="skip_weekends">
+                Skip weekends
+            </label>
+        </div>
+        <div class="flex justify-end gap-3">
+            <button type="button" class="btn btn-ghost" onclick="document.getElementById('rule-modal').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-lg" id="rule-modal-submit">Save rule</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+(function () {
+const ruleModal = document.getElementById("rule-modal");
+const ruleForm = document.getElementById("rule-form");
+if (!ruleModal || !ruleForm) return;
+const defaultAction = ruleForm.getAttribute("data-create-action");
+const modalTitle = document.getElementById("rule-modal-title");
+const modalSubmit = document.getElementById("rule-modal-submit");
+
+function openRuleModal(mode = "create", data = {}) {
+    ruleForm.reset();
+    ruleForm.action = defaultAction;
+    modalTitle.textContent = mode === "create" ? "Add recurring rule" : "Edit recurring rule";
+    modalSubmit.textContent = mode === "create" ? "Save rule" : "Update rule";
+
+    if (mode === "edit") {
+        ruleForm.action = `/recurring/${data.id}`;
+        ruleForm.elements["name"].value = data.name || "";
+        ruleForm.elements["type"].value = data.type;
+        ruleForm.elements["amount"].value = data.amount;
+        ruleForm.elements["category_id"].value = data.category;
+        ruleForm.elements["anchor_date"].value = data.anchor || "";
+        ruleForm.elements["next_occurrence"].value = data.next || "";
+        ruleForm.elements["interval_unit"].value = data.intervalUnit;
+        ruleForm.elements["interval_count"].value = data.intervalCount;
+        ruleForm.elements["end_date"].value = data.end || "";
+        ruleForm.elements["month_day_policy"].value = data.policy;
+        ruleForm.elements["auto_post"].checked = data.auto === "true";
+        ruleForm.elements["skip_weekends"].checked = data.weekends === "true";
+    }
+
+    ruleModal.showModal();
+}
+
+document.querySelectorAll("[data-open-rule-modal]").forEach((btn) => {
+    btn.addEventListener("click", () => openRuleModal("create"));
+});
+
+document.querySelectorAll("[data-rule-edit]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+        openRuleModal("edit", {
+            id: btn.dataset.ruleId,
+            name: btn.dataset.ruleName,
+            type: btn.dataset.ruleType,
+            amount: btn.dataset.ruleAmount,
+            category: btn.dataset.ruleCategory,
+            anchor: btn.dataset.ruleAnchor,
+            next: btn.dataset.ruleNext,
+            intervalUnit: btn.dataset.ruleIntervalUnit,
+            intervalCount: btn.dataset.ruleIntervalCount,
+            end: btn.dataset.ruleEnd,
+            policy: btn.dataset.rulePolicy,
+            auto: btn.dataset.ruleAuto,
+            weekends: btn.dataset.ruleWeekends,
+        });
+    });
+});
+})();
+</script>
 {% endblock %}
