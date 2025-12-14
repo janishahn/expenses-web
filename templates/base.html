@@ -26,13 +26,13 @@
         };
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/main.css') }}">
+    <link rel="stylesheet" href="{{ static_path('css/main.css') }}">
     <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" defer></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" defer></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="text/babel" data-presets="env,react" src="{{ url_for('static', path='js/dateRangePicker.jsx') }}"></script>
-    <script src="{{ url_for('static', path='js/app.js') }}" defer></script>
+    <script type="text/babel" data-presets="env,react" src="{{ static_path('js/dateRangePicker.jsx') }}"></script>
+    <script src="{{ static_path('js/app.js') }}" defer></script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </head>
 <body class="app-shell">

@@ -91,6 +91,13 @@ templates.env.globals["MonthDayPolicy"] = MonthDayPolicy
 templates.env.globals["csrf_token"] = generate_csrf_token
 
 
+def static_path(path: str) -> str:
+    return app.url_path_for("static", path=path)
+
+
+templates.env.globals["static_path"] = static_path
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -306,7 +313,7 @@ async def create_transaction(request: Request, db: Session = Depends(get_db)):
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers=headers)
     return RedirectResponse(
-        url=request.url_for("dashboard"), status_code=303, headers=headers
+        url=request.app.url_path_for("dashboard"), status_code=303, headers=headers
     )
 
 
@@ -373,7 +380,7 @@ async def create_category(request: Request, db: Session = Depends(get_db)):
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers=headers)
     return RedirectResponse(
-        url=request.url_for("categories_page"), status_code=303, headers=headers
+        url=request.app.url_path_for("categories_page"), status_code=303, headers=headers
     )
 
 
@@ -430,7 +437,9 @@ async def create_recurring(request: Request, db: Session = Depends(get_db)):
         RecurringRuleService(db).create(data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return RedirectResponse(url=request.url_for("recurring_page"), status_code=303)
+    return RedirectResponse(
+        url=request.app.url_path_for("recurring_page"), status_code=303
+    )
 
 
 @app.post("/recurring/{rule_id}/toggle")
@@ -463,7 +472,9 @@ async def update_recurring(
         RecurringRuleService(db).update(rule_id, data)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return RedirectResponse(url=request.url_for("recurring_page"), status_code=303)
+    return RedirectResponse(
+        url=request.app.url_path_for("recurring_page"), status_code=303
+    )
 
 
 @app.post("/recurring/{rule_id}/delete")
@@ -479,7 +490,9 @@ async def delete_recurring(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers={"HX-Trigger": "recurring-updated"})
-    return RedirectResponse(url=request.url_for("recurring_page"), status_code=303)
+    return RedirectResponse(
+        url=request.app.url_path_for("recurring_page"), status_code=303
+    )
 
 
 @app.get("/recurring/{rule_id}/occurrences", response_class=HTMLResponse)
@@ -1323,7 +1336,7 @@ async def restore_transaction(
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers=headers)
     return RedirectResponse(
-        url=request.url_for("deleted_transactions_page"),
+        url=request.app.url_path_for("deleted_transactions_page"),
         status_code=303,
         headers=headers,
     )
@@ -1353,7 +1366,7 @@ async def edit_transaction_submit(
     form = await request.form()
     if not validate_csrf_token(form.get("csrf_token", "")):
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
-    next_url = form.get("next") or request.url_for("transactions_page")
+    next_url = form.get("next") or request.app.url_path_for("transactions_page")
     try:
         category_id = int(form["category_id"])
         category = db.get(Category, category_id)
