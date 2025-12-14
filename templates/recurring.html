@@ -98,8 +98,8 @@
     </div>
 </section>
 
-<dialog id="rule-modal">
-    <form id="rule-form" method="post" action="/recurring" data-create-action="/recurring" class="space-y-4">
+<dialog id="rule-modal" class="modal">
+    <form id="rule-form" method="post" action="/recurring" data-create-action="/recurring" class="modal-form space-y-4">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="flex items-center justify-between">
             <div>

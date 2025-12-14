@@ -397,6 +397,21 @@ a:hover {
   transition: border 120ms, box-shadow 120ms;
 }
 
+/* iOS/Safari: date inputs default to centered text */
+input[type="date"].input,
+input[type="datetime-local"].input,
+input[type="month"].input,
+input[type="time"].input {
+  text-align: left;
+}
+
+input[type="date"].input::-webkit-date-and-time-value,
+input[type="datetime-local"].input::-webkit-date-and-time-value,
+input[type="month"].input::-webkit-date-and-time-value,
+input[type="time"].input::-webkit-date-and-time-value {
+  text-align: left;
+}
+
 .input:focus,
 .select:focus,
 .textarea:focus {
@@ -453,6 +468,7 @@ a:hover {
 
 .date-range-picker {
   position: relative;
+  width: 100%;
 }
 
 .date-range-picker__trigger {
@@ -469,7 +485,15 @@ a:hover {
   right: 0;
   z-index: 50;
   width: 18rem;
-  max-width: calc(100vw - 2rem);
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .date-range-picker__popover {
+    left: 0;
+    right: 0;
+    width: 100%;
+  }
 }
 
 .table {
@@ -654,24 +678,35 @@ dialog {
   color: hsl(var(--card-foreground));
   box-shadow: var(--shadow-2);
   width: min(640px, 92vw);
+  padding: 0;
 }
 
 dialog.modal {
-  max-height: min(720px, 90vh);
-  overflow: auto;
+  --modal-pad: clamp(1rem, 4vw, 1.5rem);
+  width: min(640px, calc(100vw - 2rem));
+  max-height: min(720px, calc(100vh - 2rem));
+  max-height: min(720px, calc(100dvh - 2rem));
+  overflow: hidden;
+  display: flex;
+  border: 1px solid hsl(var(--border) / 0.9);
 }
 
 @media (max-width: 640px) {
   dialog.modal {
-    width: 100vw;
-    height: 100vh;
-    max-height: 100vh;
-    border-radius: 0;
+    width: calc(100vw - 1.25rem);
+    max-height: calc(100vh - 1.25rem);
+    max-height: calc(100dvh - 1.25rem);
+    border-radius: var(--radius-2xl);
   }
 }
 
 .modal-form {
-  padding: clamp(1rem, 4vw, 1.5rem);
+  padding: var(--modal-pad, clamp(1rem, 4vw, 1.5rem));
+  padding-bottom: calc(var(--modal-pad, clamp(1rem, 4vw, 1.5rem)) + env(safe-area-inset-bottom));
+  overflow: auto;
+  flex: 1;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 dialog::backdrop {
