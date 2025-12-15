@@ -222,6 +222,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "dashboard.html",
         {
             "period": period,
+            "filters": filters,
             "categories": categories,
             "kpi": kpi,
             "sparklines": sparklines,

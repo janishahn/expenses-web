@@ -1,3 +1,4 @@
+{% from "macros.html" import icon %}
 <div id="kpi-panel"
      hx-get="/components/kpis"
      hx-trigger="transactions-changed from:body, filtersChanged from:#dashboard-filters"
@@ -6,12 +7,21 @@
      hx-indicator=".kpi-indicator">
 {% set spark = sparklines if sparklines is defined else {} %}
 {% set deltas = deltas if deltas is defined else None %}
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-    <article class="card" data-elevation="1">
-        <div class="card-body space-y-4">
-            <div class="metric-eyebrow">Income</div>
-            <div class="flex items-end justify-between gap-4">
-                <p class="metric-value tabular text-emerald-500">{{ kpi.income|currency }} €</p>
+<div class="kpi-cards">
+    <article class="card kpi-card" data-elevation="1">
+        <div class="card-body kpi-card-body">
+            <div class="kpi-title-row">
+                <span class="kpi-icon kpi-icon--income" aria-hidden="true">{{ icon("arrow-down-left", size=16, class="icon") }}</span>
+                <div class="metric-eyebrow">
+                    <span class="kpi-label-full">Income</span>
+                    <span class="kpi-label-compact">Inc</span>
+                </div>
+            </div>
+            <div class="kpi-metric-row flex items-end justify-between gap-4">
+                <p class="metric-value tabular text-emerald-500" title="{{ kpi.income|currency }} €">
+                    <span class="kpi-value-full">{{ kpi.income|currency }} €</span>
+                    <span class="kpi-value-compact">{{ kpi.income|currency({"include_cents": false}) }} €</span>
+                </p>
                 <div class="sparkline-slot" aria-hidden="true">
                     {% if spark.get("income") %}
                     <svg class="sparkline sparkline--income" viewBox="0 0 100 30" preserveAspectRatio="none">
@@ -22,10 +32,10 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+            <div class="kpi-caption flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
                 <span>Total money received</span>
                 {% if deltas %}
-                <span class="pill" aria-hidden="true">
+                <span class="pill kpi-delta" aria-hidden="true">
                     {% if deltas.income >= 0 %}+{% endif %}{{ deltas.income|currency }} € vs prev
                 </span>
                 {% endif %}
@@ -33,11 +43,20 @@
         </div>
     </article>
 
-    <article class="card" data-elevation="1">
-        <div class="card-body space-y-4">
-            <div class="metric-eyebrow">Expenses</div>
-            <div class="flex items-end justify-between gap-4">
-                <p class="metric-value tabular text-rose-500">{{ kpi.expenses|currency }} €</p>
+    <article class="card kpi-card" data-elevation="1">
+        <div class="card-body kpi-card-body">
+            <div class="kpi-title-row">
+                <span class="kpi-icon kpi-icon--expenses" aria-hidden="true">{{ icon("arrow-up-right", size=16, class="icon") }}</span>
+                <div class="metric-eyebrow">
+                    <span class="kpi-label-full">Expenses</span>
+                    <span class="kpi-label-compact">Exp</span>
+                </div>
+            </div>
+            <div class="kpi-metric-row flex items-end justify-between gap-4">
+                <p class="metric-value tabular text-rose-500" title="{{ kpi.expenses|currency }} €">
+                    <span class="kpi-value-full">{{ kpi.expenses|currency }} €</span>
+                    <span class="kpi-value-compact">{{ kpi.expenses|currency({"include_cents": false}) }} €</span>
+                </p>
                 <div class="sparkline-slot" aria-hidden="true">
                     {% if spark.get("expenses") %}
                     <svg class="sparkline sparkline--expenses" viewBox="0 0 100 30" preserveAspectRatio="none">
@@ -48,10 +67,10 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+            <div class="kpi-caption flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
                 <span>Total money spent</span>
                 {% if deltas %}
-                <span class="pill" aria-hidden="true">
+                <span class="pill kpi-delta" aria-hidden="true">
                     {% if deltas.expenses >= 0 %}+{% endif %}{{ deltas.expenses|currency }} € vs prev
                 </span>
                 {% endif %}
@@ -59,12 +78,19 @@
         </div>
     </article>
 
-    <article class="card" data-elevation="1">
-        <div class="card-body space-y-4">
-            <div class="metric-eyebrow">Balance</div>
-            <div class="flex items-end justify-between gap-4">
-                <p class="metric-value tabular {% if kpi.balance < 0 %}text-rose-500{% else %}text-emerald-500{% endif %}">
-                    {{ kpi.balance|currency }} €
+    <article class="card kpi-card" data-elevation="1">
+        <div class="card-body kpi-card-body">
+            <div class="kpi-title-row">
+                <span class="kpi-icon kpi-icon--balance {% if kpi.balance < 0 %}kpi-icon--balance-negative{% endif %}" aria-hidden="true">{{ icon("scale", size=16, class="icon") }}</span>
+                <div class="metric-eyebrow">
+                    <span class="kpi-label-full">Balance</span>
+                    <span class="kpi-label-compact">Bal</span>
+                </div>
+            </div>
+            <div class="kpi-metric-row flex items-end justify-between gap-4">
+                <p class="metric-value tabular {% if kpi.balance < 0 %}text-rose-500{% else %}text-emerald-500{% endif %}" title="{{ kpi.balance|currency }} €">
+                    <span class="kpi-value-full">{{ kpi.balance|currency }} €</span>
+                    <span class="kpi-value-compact">{{ kpi.balance|currency({"include_cents": false}) }} €</span>
                 </p>
                 <div class="sparkline-slot" aria-hidden="true">
                     {% if spark.get("balance") %}
@@ -76,10 +102,10 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+            <div class="kpi-caption flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
                 <span>Net position</span>
                 {% if deltas %}
-                <span class="pill" aria-hidden="true">
+                <span class="pill kpi-delta" aria-hidden="true">
                     {% if deltas.balance >= 0 %}+{% endif %}{{ deltas.balance|currency }} € vs prev
                 </span>
                 {% endif %}

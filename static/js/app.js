@@ -21,6 +21,7 @@
 
   function applyTheme(theme) {
     docEl.setAttribute("data-theme", theme);
+    docEl.classList.toggle("dark", theme === "dark");
     localStorage.setItem(THEME_STORAGE_KEY, theme);
     document.querySelectorAll("[data-theme-toggle]").forEach((btn) => {
       btn.setAttribute("aria-pressed", theme === "dark");

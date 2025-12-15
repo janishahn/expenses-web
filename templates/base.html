@@ -7,8 +7,28 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <script>
+        (function () {
+            const docEl = document.documentElement;
+            try {
+                const stored = localStorage.getItem("expenses-theme");
+                const theme =
+                    stored === "light" || stored === "dark"
+                        ? stored
+                        : window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                          ? "dark"
+                          : "light";
+                docEl.setAttribute("data-theme", theme);
+                docEl.classList.toggle("dark", theme === "dark");
+            } catch (_) {
+                docEl.setAttribute("data-theme", "light");
+                docEl.classList.remove("dark");
+            }
+        })();
+    </script>
+    <script>
         window.tailwind = window.tailwind || {};
         window.tailwind.config = {
+            darkMode: "class",
             theme: {
                 extend: {
                     fontFamily: {

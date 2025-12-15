@@ -17,28 +17,54 @@
                 <input type="hidden" name="start" value="{{ period.start }}">
                 <input type="hidden" name="end" value="{{ period.end }}">
                 <input type="hidden" name="period" value="{{ period.slug }}">
-                <input type="hidden" name="type" value="">
+                <input type="hidden" name="type" value="{{ filters.type.value if filters.type else '' }}">
             </form>
-            <div class="ghost-card filter-bar flex-col xl:flex-row gap-4" role="toolbar" aria-label="Dashboard filters">
-                <div class="flex-1 min-w-[220px] space-y-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick ranges</p>
-                    <div class="chip-group" role="group" aria-label="Period presets">
-                        <button type="button" class="chip" data-period-chip="this_month">This Month</button>
-                        <button type="button" class="chip" data-period-chip="last_month">Last Month</button>
-                        <button type="button" class="chip" data-period-chip="all">All time</button>
-                        <button type="button" class="chip" data-period-chip="custom">Custom</button>
-                    </div>
-                </div>
-                <div class="min-w-[220px] space-y-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Date range</p>
-                    <div id="date-range-picker" data-start="{{ period.start }}" data-end="{{ period.end }}"></div>
-                </div>
-                <div class="space-y-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
-                    <div class="segmented" role="group" aria-label="Transaction type filter">
-                        <button type="button" class="is-active" data-type-chip="">All</button>
-                        <button type="button" data-type-chip="income">Income</button>
-                        <button type="button" data-type-chip="expense">Expense</button>
+            <div id="dashboard-filter-card" class="card shadow-hover">
+                <div class="card-body dashboard-filter-card-body">
+	                    <div class="transactions-filter-summary">
+	                        <div class="transactions-filter-summary-left">
+	                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Filters</p>
+	                            <div class="transactions-filter-chips" aria-label="Applied filters">
+	                                <span class="pill" data-dashboard-filter-pill="period">{{ period.slug.replace("_"," ")|title }}</span>
+	                                <span class="pill" data-dashboard-filter-pill="date">{{ period.start }} → {{ period.end }}</span>
+	                                <span class="pill" data-dashboard-filter-pill="type">{% if filters.type %}{{ filters.type.value|title }}{% else %}All{% endif %}</span>
+	                            </div>
+	                        </div>
+	                        <button type="button"
+	                                class="btn btn-secondary btn-sm"
+	                                data-dashboard-filter-toggle
+	                                data-filter-toggle
+	                                aria-expanded="false"
+	                                aria-controls="dashboard-filter-panel">
+	                            <span data-dashboard-filter-toggle-label>Filters</span>
+	                            {{ icon("chevron-down", class="icon filter-toggle-icon") }}
+	                        </button>
+	                    </div>
+
+                    <div id="dashboard-filter-panel" class="transactions-filter-panel" data-expanded="false" aria-hidden="true" inert>
+                        <div class="filter-bar filter-bar--bare flex-col xl:flex-row gap-4" role="toolbar" aria-label="Dashboard filters">
+                            <div class="flex-1 min-w-[220px] space-y-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick ranges</p>
+                                <div class="chip-group" role="group" aria-label="Period presets">
+                                    <button type="button" class="chip" data-period-chip="this_month">This Month</button>
+                                    <button type="button" class="chip" data-period-chip="last_month">Last Month</button>
+                                    <button type="button" class="chip" data-period-chip="all">All time</button>
+                                    <button type="button" class="chip" data-period-chip="custom">Custom</button>
+                                </div>
+                            </div>
+                            <div class="min-w-[220px] space-y-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Date range</p>
+                                <div id="date-range-picker" data-start="{{ period.start }}" data-end="{{ period.end }}"></div>
+                            </div>
+                            <div class="space-y-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
+                                <div class="segmented" role="group" aria-label="Transaction type filter">
+                                    <button type="button" class="{% if not filters.type %}is-active{% endif %}" data-type-chip="">All</button>
+                                    <button type="button" class="{% if filters.type and filters.type.value == 'income' %}is-active{% endif %}" data-type-chip="income">Income</button>
+                                    <button type="button" class="{% if filters.type and filters.type.value == 'expense' %}is-active{% endif %}" data-type-chip="expense">Expense</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -49,10 +75,10 @@
 <div class="relative">
     {% include "components/kpis.html" %}
     <div class="kpi-indicator htmx-indicator absolute inset-0 pointer-events-none">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 h-full">
+        <div class="kpi-cards">
             {% for _ in range(3) %}
-            <div class="card" data-elevation="1">
-                <div class="card-body space-y-4">
+            <div class="card kpi-card" data-elevation="1">
+                <div class="card-body kpi-card-body">
                     <div class="skeleton h-3 w-24"></div>
                     <div class="skeleton h-8 w-32"></div>
                     <div class="skeleton h-3 w-40"></div>
@@ -63,14 +89,8 @@
     </div>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-    <div class="relative">
-        {% include "components/donut.html" %}
-        <div class="donut-indicator htmx-indicator absolute inset-0 rounded-xl bg-white/80 dark:bg-slate-900/70 backdrop-blur flex items-center justify-center">
-            <div class="skeleton h-40 w-40 max-w-[60%]"></div>
-        </div>
-    </div>
-    <div class="relative">
+<div class="dashboard-panels mt-6">
+    <div class="relative dashboard-panel-recent">
         {% set transactions = recent %}
         {% include "components/transaction_list.html" %}
         <div class="recent-indicator htmx-indicator absolute inset-0 rounded-xl bg-white/70 dark:bg-slate-900/70 backdrop-blur flex items-center justify-center">
@@ -79,6 +99,12 @@
                 <div class="skeleton h-10 w-full"></div>
                 {% endfor %}
             </div>
+        </div>
+    </div>
+    <div class="relative dashboard-panel-donut">
+        {% include "components/donut.html" %}
+        <div class="donut-indicator htmx-indicator absolute inset-0 rounded-xl bg-white/80 dark:bg-slate-900/70 backdrop-blur flex items-center justify-center">
+            <div class="skeleton h-40 w-40 max-w-[60%]"></div>
         </div>
     </div>
 </div>
@@ -221,7 +247,29 @@ const filterForm = document.getElementById("dashboard-filter-form");
 if (!filterHub || !filterForm) return;
 const typeButtons = Array.from(document.querySelectorAll("[data-type-chip]"));
 const periodChips = Array.from(document.querySelectorAll("[data-period-chip]"));
+const filterCard = document.getElementById("dashboard-filter-card");
+const filterPanel = document.getElementById("dashboard-filter-panel");
+const filterToggleBtn = document.querySelector("[data-dashboard-filter-toggle]");
+const filterToggleLabel = filterToggleBtn ? filterToggleBtn.querySelector("[data-dashboard-filter-toggle-label]") : null;
+const summaryPeriod = document.querySelector("[data-dashboard-filter-pill='period']");
+const summaryDate = document.querySelector("[data-dashboard-filter-pill='date']");
+const summaryType = document.querySelector("[data-dashboard-filter-pill='type']");
 let rangeApi = null;
+let pickerMounted = false;
+let openCustomWhenReady = false;
+
+function periodLabel(slug) {
+    if (slug === "this_month") return "This month";
+    if (slug === "last_month") return "Last month";
+    if (slug === "all") return "All time";
+    return "Custom";
+}
+
+function updateSummary(detail) {
+    if (summaryPeriod) summaryPeriod.textContent = periodLabel(detail.period);
+    if (summaryDate) summaryDate.textContent = `${detail.start} → ${detail.end}`;
+    if (summaryType) summaryType.textContent = detail.type ? detail.type[0].toUpperCase() + detail.type.slice(1) : "All";
+}
 
 function emitFiltersChanged() {
     const detail = {
@@ -230,6 +278,7 @@ function emitFiltersChanged() {
         period: filterForm.elements["period"].value,
         type: filterForm.elements["type"].value,
     };
+    updateSummary(detail);
     if (filterHub) {
         filterHub.dispatchEvent(new CustomEvent("filtersChanged", { bubbles: true, detail }));
     }
@@ -238,6 +287,11 @@ function emitFiltersChanged() {
     params.set("period", detail.period);
     params.set("start", detail.start);
     params.set("end", detail.end);
+    if (detail.type) {
+        params.set("type", detail.type);
+    } else {
+        params.delete("type");
+    }
     const nextUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, "", nextUrl);
     window.ui?.syncNavPeriodLinks?.();
@@ -280,6 +334,9 @@ function setPeriod(slug) {
         endDate = today;
     } else if (slug === "custom" && rangeApi) {
         rangeApi.open();
+    } else if (slug === "custom") {
+        ensurePickerMounted();
+        openCustomWhenReady = true;
     }
 
     filterForm.elements["period"].value = slug;
@@ -325,8 +382,70 @@ function mountDashboardRangePicker() {
         onApply: (s, e) => window.dashboardFilters.updateRange(s, e),
         onExpose: (api) => {
             rangeApi = api;
+            if (openCustomWhenReady) {
+                openCustomWhenReady = false;
+                rangeApi.open();
+            }
         },
     });
+}
+
+function ensurePickerMounted() {
+    if (pickerMounted) return;
+    pickerMounted = true;
+    mountDashboardRangePicker();
+}
+
+function setFilterPanelExpanded(expanded, animate = true) {
+    if (!filterPanel || !filterToggleBtn || !filterCard) return;
+
+    filterToggleBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
+    filterPanel.setAttribute("aria-hidden", expanded ? "false" : "true");
+    filterCard.classList.toggle("filters-expanded", expanded);
+    filterPanel.dataset.expanded = expanded ? "true" : "false";
+    filterPanel.classList.toggle("is-expanded", expanded);
+
+    if (filterToggleLabel) {
+        filterToggleLabel.textContent = expanded ? "Hide" : "Filters";
+    }
+
+    if (expanded) {
+        filterPanel.removeAttribute("inert");
+    } else {
+        filterPanel.setAttribute("inert", "");
+    }
+
+    const controls = filterPanel.querySelectorAll("input, select, textarea, button");
+    controls.forEach((el) => {
+        el.disabled = !expanded;
+    });
+
+    if (expanded) {
+        ensurePickerMounted();
+        if (!animate) {
+            filterPanel.style.maxHeight = "none";
+            return;
+        }
+
+        filterPanel.style.maxHeight = "0px";
+        filterPanel.offsetHeight;
+        filterPanel.style.maxHeight = `${filterPanel.scrollHeight}px`;
+        const onEnd = (event) => {
+            if (event.propertyName !== "max-height") return;
+            filterPanel.style.maxHeight = "none";
+        };
+        filterPanel.addEventListener("transitionend", onEnd, { once: true });
+    } else {
+        if (!animate) {
+            filterPanel.style.maxHeight = "0px";
+            return;
+        }
+
+        const currentHeight = filterPanel.scrollHeight;
+        filterPanel.style.maxHeight = filterPanel.style.maxHeight === "none" ? `${currentHeight}px` : filterPanel.style.maxHeight;
+        filterPanel.offsetHeight;
+        filterPanel.style.maxHeight = "0px";
+    }
 }
 
 typeButtons.forEach((btn) => {
@@ -338,7 +457,26 @@ periodChips.forEach((chip) => {
 });
 
 syncPeriodChips(filterForm.elements["period"].value);
-mountDashboardRangePicker();
+updateSummary({
+    start: filterForm.elements["start"].value,
+    end: filterForm.elements["end"].value,
+    period: filterForm.elements["period"].value,
+    type: filterForm.elements["type"].value,
+});
+
+if (filterPanel) {
+    filterPanel.style.maxHeight = "0px";
+    const startExpanded = window.matchMedia && window.matchMedia("(min-width: 1024px)").matches;
+    setFilterPanelExpanded(startExpanded, false);
+}
+
+if (filterToggleBtn) {
+    const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    filterToggleBtn.addEventListener("click", () => {
+        const expanded = filterToggleBtn.getAttribute("aria-expanded") === "true";
+        setFilterPanelExpanded(!expanded, !prefersReducedMotion);
+    });
+}
 })();
 </script>
 {% endblock %}
