@@ -25,11 +25,6 @@ class TransactionType(str, Enum):
     expense = "expense"
 
 
-class TransactionKind(str, Enum):
-    normal = "normal"
-    adjustment = "adjustment"
-
-
 class IntervalUnit(str, Enum):
     day = "day"
     week = "week"
@@ -83,11 +78,9 @@ class Transaction(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     date: Mapped[date] = mapped_column(Date, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     type: Mapped[TransactionType] = mapped_column(
         SAEnum(TransactionType), nullable=False
-    )
-    kind: Mapped[TransactionKind] = mapped_column(
-        SAEnum(TransactionKind), default=TransactionKind.normal, nullable=False
     )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     category_id: Mapped[int] = mapped_column(
@@ -199,3 +192,15 @@ class Budget(Base, TimestampMixin):
         ),
         Index("ix_budget_user_month", "user_id", "year", "month"),
     )
+
+
+class BalanceAnchor(Base, TimestampMixin):
+    __tablename__ = "balance_anchors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    as_of_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    balance_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[Optional[str]] = mapped_column(Text)
+
+    __table_args__ = (Index("ix_balance_anchor_user_at", "user_id", "as_of_at"),)

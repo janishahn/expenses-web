@@ -1,0 +1,45 @@
+{% from "macros.html" import icon %}
+<dialog id="balance-anchor-modal" class="modal">
+    <form id="balance-anchor-form"
+          hx-post="/balance-anchors"
+          hx-swap="none"
+          hx-trigger="submit"
+          hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); document.getElementById('balance-anchor-modal')?.close(); window.ui?.showToast('Balance snapshot saved'); }"
+          hx-on:htmx:response-error="window.ui?.showToast(window.ui?.httpErrorMessage?.(event.detail.xhr) || 'Unable to save balance snapshot', 'error')"
+          class="modal-form space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.url.path }}">
+        <div class="space-y-1">
+            <p class="metric-eyebrow">Reconcile</p>
+            <div class="flex items-center justify-between">
+                <h3 class="text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Record balance snapshot</h3>
+                <button type="button" class="btn btn-ghost btn-icon" data-close-balance-anchor aria-label="Close">
+                    {{ icon("x", class="icon") }}
+                </button>
+            </div>
+            <p class="text-sm text-slate-500 dark:text-slate-400">
+                Stores a point-in-time balance snapshot. The app treats this as your account balance at the selected moment.
+                If you later change transaction timestamps around that moment, record a new snapshot.
+            </p>
+        </div>
+        <div class="separator"></div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                As of
+                <input type="datetime-local" name="as_of_at" value="{{ now_local() }}" class="input" required>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Balance
+                <input type="text" name="balance" placeholder="-12.34" inputmode="decimal" class="input" required>
+            </label>
+        </div>
+        <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+            Note (optional)
+            <input type="text" name="note" placeholder="e.g., Bank balance on signup day" class="input" maxlength="200">
+        </label>
+        <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+            <button type="button" class="btn btn-ghost" data-close-balance-anchor>Cancel</button>
+            <button type="submit" class="btn btn-primary btn-lg">Save snapshot</button>
+        </div>
+    </form>
+</dialog>

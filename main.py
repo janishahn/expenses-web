@@ -4,6 +4,7 @@ import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional, List
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import (
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 from typing import TYPE_CHECKING
 
 from csv_utils import parse_amount
+from config import get_settings
 from csrf import generate_csrf_token, validate_csrf_token
 from database import SessionLocal
 from legacy_sqlite_import import LegacySQLiteImportService
@@ -27,13 +29,20 @@ from models import (
     IntervalUnit,
     MonthDayPolicy,
     Transaction,
-    TransactionKind,
     TransactionType,
 )
 from periods import Period, resolve_period
 from scheduler import SchedulerManager
-from schemas import BudgetIn, CategoryIn, RecurringRuleIn, TransactionIn, ReportOptions
+from schemas import (
+    BalanceAnchorIn,
+    BudgetIn,
+    CategoryIn,
+    RecurringRuleIn,
+    ReportOptions,
+    TransactionIn,
+)
 from services import (
+    BalanceAnchorService,
     BudgetService,
     CSVService,
     CategoryService,
@@ -89,6 +98,12 @@ templates.env.globals["TransactionType"] = TransactionType
 templates.env.globals["IntervalUnit"] = IntervalUnit
 templates.env.globals["MonthDayPolicy"] = MonthDayPolicy
 templates.env.globals["csrf_token"] = generate_csrf_token
+templates.env.globals["today"] = lambda: date.today().isoformat()
+templates.env.globals["now_local"] = (
+    lambda: datetime.now(ZoneInfo(get_settings().timezone))
+    .replace(tzinfo=None)
+    .strftime("%Y-%m-%dT%H:%M")
+)
 
 
 def static_path(path: str) -> str:
@@ -289,16 +304,19 @@ async def create_transaction(request: Request, db: Session = Depends(get_db)):
         if not category:
             raise ValueError("Category not found")
 
-        kind_value = form.get("kind", "normal")
-        kind = (
-            TransactionKind(kind_value)
-            if kind_value in ["normal", "adjustment"]
-            else TransactionKind.normal
-        )
+        occurred_raw = form.get("occurred_at")
+        if occurred_raw:
+            occurred_at = datetime.fromisoformat(str(occurred_raw))
+            txn_date = occurred_at.date()
+        else:
+            txn_date = date.fromisoformat(form["date"])
+            occurred_at = datetime.combine(txn_date, datetime.now().time()).replace(
+                second=0, microsecond=0
+            )
         data = TransactionIn(
-            date=date.fromisoformat(form["date"]),
+            date=txn_date,
+            occurred_at=occurred_at,
             type=category.type,
-            kind=kind,
             amount_cents=parse_amount(form["amount"]),
             category_id=category_id,
             note=form["note"],
@@ -318,6 +336,94 @@ async def create_transaction(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@app.post("/balance-anchors")
+async def create_balance_anchor(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    token = form.get("csrf_token", "")
+    if not validate_csrf_token(token):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+
+    next_url = form.get("next") or request.app.url_path_for("dashboard")
+    try:
+        note_raw = form.get("note")
+        note = (
+            str(note_raw).strip()
+            if isinstance(note_raw, str) and str(note_raw).strip()
+            else None
+        )
+        data = BalanceAnchorIn(
+            as_of_at=datetime.fromisoformat(str(form["as_of_at"])),
+            balance_cents=parse_amount(str(form["balance"]), allow_negative=True),
+            note=note,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        BalanceAnchorService(db).create(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    headers = {"HX-Trigger": "balance-anchors-changed"}
+    if request.headers.get("HX-Request"):
+        return Response(status_code=204, headers=headers)
+    return RedirectResponse(url=str(next_url), status_code=303, headers=headers)
+
+
+@app.post("/balance-anchors/{anchor_id}/delete")
+async def delete_balance_anchor(
+    anchor_id: int, request: Request, db: Session = Depends(get_db)
+):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    try:
+        BalanceAnchorService(db).delete(anchor_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    headers = {"HX-Trigger": "balance-anchors-changed"}
+    if request.headers.get("HX-Request"):
+        return Response(status_code=200, content="", headers=headers)
+    next_url = form.get("next") or request.app.url_path_for("admin_page")
+    return RedirectResponse(url=str(next_url), status_code=303, headers=headers)
+
+
+@app.post("/balance-anchors/{anchor_id}/edit")
+async def edit_balance_anchor(
+    anchor_id: int, request: Request, db: Session = Depends(get_db)
+):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+
+    next_url = form.get("next") or request.app.url_path_for("admin_page")
+    try:
+        note_raw = form.get("note")
+        note = (
+            str(note_raw).strip()
+            if isinstance(note_raw, str) and str(note_raw).strip()
+            else None
+        )
+        data = BalanceAnchorIn(
+            as_of_at=datetime.fromisoformat(str(form["as_of_at"])),
+            balance_cents=parse_amount(str(form["balance"]), allow_negative=True),
+            note=note,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        BalanceAnchorService(db).update(anchor_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    headers = {"HX-Trigger": "balance-anchors-changed"}
+    if request.headers.get("HX-Request"):
+        return Response(status_code=204, headers=headers)
+    return RedirectResponse(url=str(next_url), status_code=303, headers=headers)
+
+
 @app.post("/transactions/{transaction_id}/delete")
 async def delete_transaction(
     transaction_id: int, request: Request, db: Session = Depends(get_db)
@@ -329,7 +435,13 @@ async def delete_transaction(
         TransactionService(db).soft_delete(transaction_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return Response(status_code=204, headers={"HX-Trigger": "transactions-changed"})
+    headers = {"HX-Trigger": "transactions-changed"}
+    if request.headers.get("HX-Request"):
+        return Response(status_code=200, content="", headers=headers)
+    next_url = request.headers.get("Referer") or request.app.url_path_for(
+        "transactions_page"
+    )
+    return RedirectResponse(url=str(next_url), status_code=303, headers=headers)
 
 
 @app.get("/categories", response_class=HTMLResponse)
@@ -342,7 +454,6 @@ def categories_page(request: Request, db: Session = Depends(get_db)):
         .where(
             Transaction.user_id == category_service.user_id,
             Transaction.deleted_at.is_(None),
-            Transaction.kind == TransactionKind.normal,
             Transaction.date.between(period.start, period.end),
         )
         .group_by(Transaction.category_id)
@@ -381,7 +492,9 @@ async def create_category(request: Request, db: Session = Depends(get_db)):
     if request.headers.get("HX-Request"):
         return Response(status_code=204, headers=headers)
     return RedirectResponse(
-        url=request.app.url_path_for("categories_page"), status_code=303, headers=headers
+        url=request.app.url_path_for("categories_page"),
+        status_code=303,
+        headers=headers,
     )
 
 
@@ -560,8 +673,8 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
             {
                 "id": txn.id,
                 "date": txn.date.isoformat(),
+                "occurred_at": txn.occurred_at.isoformat(),
                 "type": txn.type.value,
-                "kind": txn.kind.value,
                 "amount_cents": txn.amount_cents,
                 "category": txn.category.name if txn.category else None,
                 "note": txn.note,
@@ -710,10 +823,11 @@ async def generate_pdf_report(
     request: Request,
     start: str = Form(...),
     end: str = Form(...),
-    sections: List[str] = Form(["summary", "category_breakdown", "recent_transactions"]),
+    sections: List[str] = Form(
+        ["summary", "category_breakdown", "recent_transactions"]
+    ),
     transaction_type: Optional[str] = Form(None),
     category_ids: Optional[List[int]] = Form(None),
-    include_adjustments: bool = Form(False),
     transactions_sort: str = Form("newest"),
     show_running_balance: bool = Form(False),
     include_category_subtotals: bool = Form(False),
@@ -740,7 +854,6 @@ async def generate_pdf_report(
             notes=notes,
             transaction_type=parsed_txn_type,
             category_ids=category_ids or None,
-            include_adjustments=include_adjustments,
             transactions_sort=parsed_sort,  # type: ignore[arg-type]
             show_running_balance=show_running_balance,
             include_category_subtotals=include_category_subtotals,
@@ -773,7 +886,7 @@ async def generate_pdf_report(
         font_config = FontConfiguration()
         html = templates.env.get_template("report.html").render(**data)
         css = CSS(
-            string=f"""
+            string="""
                 @page {{
                     size: A4;
                     margin: 18mm 16mm 20mm 16mm;
@@ -1044,7 +1157,7 @@ async def generate_pdf_report(
                 svg {{
                     max-width: 100%;
                 }}
-            """,
+                """,
             font_config=font_config,
         )
 
@@ -1162,11 +1275,16 @@ def purge_deleted_transactions(
 
 
 @app.get("/admin", response_class=HTMLResponse)
-def admin_page(request: Request):
+def admin_page(request: Request, db: Session = Depends(get_db)):
     db_path = Path("data/expenses.db")
     db_size_bytes = db_path.stat().st_size if db_path.exists() else 0
     db_modified = (
         datetime.fromtimestamp(db_path.stat().st_mtime) if db_path.exists() else None
+    )
+    balance_service = BalanceAnchorService(db)
+    balance_anchors = balance_service.list_all()
+    current_balance = balance_service.balance_as_of(
+        datetime.now(ZoneInfo(get_settings().timezone)).replace(tzinfo=None)
     )
     return render(
         request,
@@ -1179,6 +1297,8 @@ def admin_page(request: Request):
             if db_size_bytes
             else 0,
             "db_modified": db_modified,
+            "balance_anchors": balance_anchors,
+            "current_balance": current_balance,
         },
     )
 
@@ -1369,21 +1489,26 @@ async def edit_transaction_submit(
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
     next_url = form.get("next") or request.app.url_path_for("transactions_page")
     try:
+        existing = TransactionService(db).get(transaction_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try:
         category_id = int(form["category_id"])
         category = db.get(Category, category_id)
         if not category:
             raise ValueError("Category not found")
 
-        kind_value = form.get("kind", "normal")
-        kind = (
-            TransactionKind(kind_value)
-            if kind_value in ["normal", "adjustment"]
-            else TransactionKind.normal
-        )
+        occurred_raw = form.get("occurred_at")
+        if occurred_raw:
+            occurred_at = datetime.fromisoformat(str(occurred_raw))
+            txn_date = occurred_at.date()
+        else:
+            txn_date = date.fromisoformat(form["date"])
+            occurred_at = datetime.combine(txn_date, existing.occurred_at.time())
         data = TransactionIn(
-            date=date.fromisoformat(form["date"]),
+            date=txn_date,
+            occurred_at=occurred_at,
             type=category.type,
-            kind=kind,
             amount_cents=parse_amount(form["amount"]),
             category_id=category_id,
             note=form["note"],

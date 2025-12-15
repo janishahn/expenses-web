@@ -122,36 +122,37 @@
     {% if transactions %}
     <div class="space-y-6">
         <div class="lg:hidden space-y-3">
-            {% for txn in transactions %}
-            {% set is_expense = txn.type.value == 'expense' %}
-            <div class="card shadow-hover p-4 flex gap-4 items-start">
-                <div class="flex-1 space-y-1">
-                    <div class="flex items-center gap-2">
-                        <p class="font-semibold text-slate-800 dark:text-slate-100">{{ txn.note or (txn.category.name if txn.category else "Untitled entry") }}</p>
-                        <span class="badge badge-muted text-xs">{{ txn.type.value|title }}</span>
-                        {% if txn.kind == 'adjustment' %}
-                        <span class="pill">Adj</span>
-                        {% endif %}
-                    </div>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ txn.date }} • {{ txn.category.name if txn.category else "Uncategorized" }}</p>
-                </div>
-	                <div class="text-right">
-	                    <p class="tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
-	                        {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
-	                    </p>
-	                    <div class="mt-2 inline-flex items-center gap-1">
-	                        <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon" data-tooltip="Edit entry">
-	                            {{ icon("pencil", class="icon") }}
-	                        </a>
-	                        <form method="post" action="/transactions/{{ txn.id }}/delete" class="inline-flex items-center gap-2">
-	                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-	                        <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete entry">
-	                            {{ icon("trash-2", class="icon") }}
-	                        </button>
-	                        </form>
+	            {% for txn in transactions %}
+	            {% set is_expense = txn.type.value == 'expense' %}
+	            <div class="card shadow-hover p-4 flex gap-4 items-start" id="txn-card-{{ txn.id }}">
+	                <div class="flex-1 space-y-1">
+	                    <div class="flex items-center gap-2">
+	                        <p class="font-semibold text-slate-800 dark:text-slate-100">{{ txn.note or (txn.category.name if txn.category else "Untitled entry") }}</p>
+	                        <span class="badge badge-muted text-xs">{{ txn.type.value|title }}</span>
 	                    </div>
+	                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ txn.date }} {{ txn.occurred_at.strftime('%H:%M') }} • {{ txn.category.name if txn.category else "Uncategorized" }}</p>
 	                </div>
-	            </div>
+                <div class="text-right">
+                    <p class="tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                        {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
+                    </p>
+                    <div class="mt-2 inline-flex items-center gap-1">
+                        <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon" data-tooltip="Edit entry">
+                            {{ icon("pencil", class="icon") }}
+                        </a>
+                        <button type="button"
+                                class="btn btn-ghost btn-icon"
+                                data-tooltip="Delete entry"
+                                hx-post="/transactions/{{ txn.id }}/delete"
+                                hx-vals='{"csrf_token": "{{ csrf_token() }}"}'
+                                hx-target="#txn-card-{{ txn.id }}"
+                                hx-swap="outerHTML"
+                                hx-confirm="Delete this transaction?">
+                            {{ icon("trash-2", class="icon") }}
+                        </button>
+                    </div>
+                </div>
+            </div>
 	            {% endfor %}
 	        </div>
 
@@ -171,34 +172,35 @@
                     <tbody>
                         {% for txn in transactions %}
                         {% set is_expense = txn.type.value == 'expense' %}
-                        <tr>
-                            <td>{{ txn.date }}</td>
-                            <td class="font-medium text-slate-800 dark:text-slate-100">
-                                {{ txn.note or "Untitled entry" }}
-                                {% if txn.kind == 'adjustment' %}
-                                <span class="pill ml-2">Adjustment</span>
-                                {% endif %}
-                            </td>
+	                        <tr id="txn-row-{{ txn.id }}">
+	                            <td>{{ txn.date }} {{ txn.occurred_at.strftime('%H:%M') }}</td>
+	                            <td class="font-medium text-slate-800 dark:text-slate-100">
+	                                {{ txn.note or "Untitled entry" }}
+	                            </td>
                             <td>{{ txn.category.name if txn.category else "Uncategorized" }}</td>
                             <td>{{ txn.type.value|title }}</td>
                             <td class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
                                 {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
-	                            </td>
-	                            <td class="text-right">
-	                                <div class="inline-flex items-center gap-1 justify-end">
-	                                    <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon" data-tooltip="Edit entry">
-	                                        {{ icon("pencil", class="icon") }}
-	                                    </a>
-	                                    <form method="post" action="/transactions/{{ txn.id }}/delete">
-	                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-	                                        <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete entry">
-	                                            {{ icon("trash-2", class="icon") }}
-	                                        </button>
-	                                    </form>
-	                                </div>
-	                            </td>
-	                        </tr>
-	                        {% endfor %}
+                            </td>
+                            <td class="text-right">
+                                <div class="inline-flex items-center gap-1 justify-end">
+                                    <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon" data-tooltip="Edit entry">
+                                        {{ icon("pencil", class="icon") }}
+                                    </a>
+                                    <button type="button"
+                                            class="btn btn-ghost btn-icon"
+                                            data-tooltip="Delete entry"
+                                            hx-post="/transactions/{{ txn.id }}/delete"
+                                            hx-vals='{"csrf_token": "{{ csrf_token() }}"}'
+                                            hx-target="#txn-row-{{ txn.id }}"
+                                            hx-swap="outerHTML"
+                                            hx-confirm="Delete this transaction?">
+                                        {{ icon("trash-2", class="icon") }}
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>

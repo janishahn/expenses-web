@@ -10,7 +10,9 @@ def test_dialog_modal_hidden_until_open() -> None:
     assert "display: none;" in modal_block.group(0)
 
     open_block = re.search(r"dialog\.modal\[open\]\s*\{[^}]*\}", css, re.DOTALL)
-    assert open_block, "Expected a `dialog.modal[open] { ... }` block in static/css/main.css"
+    assert open_block, (
+        "Expected a `dialog.modal[open] { ... }` block in static/css/main.css"
+    )
     assert "display: flex;" in open_block.group(0)
 
 

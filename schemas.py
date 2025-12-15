@@ -1,9 +1,9 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from models import IntervalUnit, MonthDayPolicy, TransactionKind, TransactionType
+from models import IntervalUnit, MonthDayPolicy, TransactionType
 
 
 class ReportOptions(BaseModel):
@@ -20,7 +20,6 @@ class ReportOptions(BaseModel):
     notes: Optional[str] = None
     transaction_type: Optional[TransactionType] = None
     category_ids: Optional[list[int]] = None
-    include_adjustments: bool = False
     transactions_sort: Literal["newest", "oldest"] = "newest"
     show_running_balance: bool = False
     include_category_subtotals: bool = False
@@ -41,8 +40,8 @@ class CategoryIn(BaseModel):
 
 class TransactionIn(BaseModel):
     date: date
+    occurred_at: datetime
     type: TransactionType
-    kind: TransactionKind = TransactionKind.normal
     amount_cents: int = Field(..., ge=0)
     category_id: int
     note: str = Field(..., min_length=1, max_length=200)
@@ -66,7 +65,12 @@ class RecurringRuleIn(BaseModel):
 class CSVRow(BaseModel):
     date: date
     type: TransactionType
-    kind: TransactionKind = TransactionKind.normal
     amount_cents: int
     category: str
     note: Optional[str]
+
+
+class BalanceAnchorIn(BaseModel):
+    as_of_at: datetime
+    balance_cents: int
+    note: Optional[str] = Field(default=None, max_length=200)

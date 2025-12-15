@@ -16,14 +16,15 @@
         <div class="card-body space-y-5">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                    Date
-                    <input type="date" name="date" value="{{ transaction.date }}" class="input" required>
+                    When
+                    <input type="datetime-local" name="occurred_at" value="{{ transaction.occurred_at.strftime('%Y-%m-%dT%H:%M') }}" class="input" required>
                 </label>
                 <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                     Amount
                     <input type="text" name="amount" value="{{ '%.2f' % (transaction.amount_cents / 100) }}" inputmode="decimal" class="input" required>
                 </label>
             </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Timestamp is used for ordering and balance reconciliation.</p>
 
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 Category
@@ -48,11 +49,6 @@
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 Description
                 <input type="text" name="note" value="{{ transaction.note or '' }}" class="input" placeholder="e.g., Lunch with Alex" required>
-            </label>
-
-            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                <input type="checkbox" name="kind" value="adjustment" {% if transaction.kind == 'adjustment' %}checked{% endif %}>
-                Mark as adjustment (excluded from KPIs/charts)
             </label>
         </div>
         <div class="separator"></div>

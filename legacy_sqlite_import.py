@@ -16,7 +16,6 @@ from models import (
     MonthDayPolicy,
     RecurringRule,
     Transaction,
-    TransactionKind,
     TransactionType,
 )
 from recurrence import calculate_next_date
@@ -173,8 +172,12 @@ class LegacySQLiteImportService:
                 "select min(transaction_date) as min_d, max(transaction_date) as max_d from transactions"
             )
             row = cur.fetchone()
-            min_d = _parse_legacy_datetime(row["min_d"]).date() if row["min_d"] else None
-            max_d = _parse_legacy_datetime(row["max_d"]).date() if row["max_d"] else None
+            min_d = (
+                _parse_legacy_datetime(row["min_d"]).date() if row["min_d"] else None
+            )
+            max_d = (
+                _parse_legacy_datetime(row["max_d"]).date() if row["max_d"] else None
+            )
 
             cur.execute(
                 "select count(*) as n from transactions "
@@ -326,7 +329,9 @@ class LegacySQLiteImportService:
                     category_id_by_legacy[legacy_key] = cat.id
                     continue
 
-                existing = existing_categories.get((legacy_type, legacy_category.lower()))
+                existing = existing_categories.get(
+                    (legacy_type, legacy_category.lower())
+                )
                 if existing:
                     category_id_by_legacy[legacy_key] = existing.id
                     continue
@@ -357,7 +362,9 @@ class LegacySQLiteImportService:
                     if (legacy_type, legacy_category) in discarded_legacy_keys:
                         discarded_rules += 1
                         continue
-                    category_id = category_id_by_legacy.get((legacy_type, legacy_category))
+                    category_id = category_id_by_legacy.get(
+                        (legacy_type, legacy_category)
+                    )
                     if not category_id:
                         raise ValueError(
                             f"Missing mapping for category '{legacy_category}' ({legacy_type.value})"
@@ -469,8 +476,8 @@ class LegacySQLiteImportService:
                 txn = Transaction(
                     user_id=self.user_id,
                     date=txn_date,
+                    occurred_at=dt,
                     type=txn_type,
-                    kind=TransactionKind.normal,
                     amount_cents=_parse_amount_cents(str(r["amount_text"])),
                     category_id=category_id,
                     note=note,
@@ -491,7 +498,9 @@ class LegacySQLiteImportService:
                 "imported_recurring_rules": len(imported_rule_ids_by_name)
                 if import_recurring_rules
                 else 0,
-                "discarded_recurring_rules": discarded_rules if import_recurring_rules else 0,
+                "discarded_recurring_rules": discarded_rules
+                if import_recurring_rules
+                else 0,
             }
         finally:
             con.close()

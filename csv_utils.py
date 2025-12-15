@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from io import StringIO
 from typing import Sequence
 
-from models import Transaction, TransactionKind, TransactionType
+from models import Transaction, TransactionType
 from schemas import CSVRow
 
 
@@ -55,7 +55,7 @@ def parse_date(value: str):
         return datetime.strptime(value, "%d.%m.%Y").date()
 
 
-def parse_amount(value: str) -> int:
+def parse_amount(value: str, *, allow_negative: bool = False) -> int:
     clean = value.strip().replace("€", "").replace(" ", "")
     clean = clean.replace(",", ".")
     if clean.count(".") > 1:
@@ -66,7 +66,7 @@ def parse_amount(value: str) -> int:
     except InvalidOperation as exc:
         raise ValueError("Invalid amount") from exc
     cents = int((amount * 100).quantize(Decimal("1")))
-    if cents < 0:
+    if cents < 0 and not allow_negative:
         raise ValueError("Amount must be positive")
     return cents
 
@@ -80,12 +80,6 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
             date_value = parse_date((raw.get("Date") or "").strip())
             type_raw = (raw.get("Type") or "").strip().lower()
             type_value = TransactionType(type_raw)
-            kind_raw = (raw.get("Kind") or "normal").strip().lower()
-            kind_value = (
-                TransactionKind(kind_raw)
-                if kind_raw in ["normal", "adjustment"]
-                else TransactionKind.normal
-            )
             amount_value = parse_amount(raw.get("Amount") or "0")
             category = (raw.get("Category") or "").strip()
             note_raw = raw.get("Note")
@@ -98,7 +92,6 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
                 CSVRow(
                     date=date_value,
                     type=type_value,
-                    kind=kind_value,
                     amount_cents=amount_value,
                     category=category,
                     note=note,
@@ -112,13 +105,12 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
 def export_transactions(transactions: Sequence[Transaction]) -> str:
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Type", "Kind", "Amount", "Category", "Note"])
+    writer.writerow(["Date", "Type", "Amount", "Category", "Note"])
     for txn in transactions:
         writer.writerow(
             [
                 txn.date.isoformat(),
                 txn.type.value,
-                txn.kind.value,
                 f"{txn.amount_cents / 100:.2f}",
                 sanitize_csv_value(txn.category.name if txn.category else ""),
                 sanitize_csv_value(txn.note or ""),

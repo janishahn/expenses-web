@@ -13,8 +13,8 @@
   --accent: 213 27% 85%;
   --accent-foreground: 222 37% 17%;
   --border: 215 27% 87%;
-  --ring: 222 81% 62%;
-  --primary: 222 89% 63%;
+  --ring: 238 81% 62%;
+  --primary: 238 84% 60%;
   --primary-foreground: 210 40% 98%;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
@@ -31,18 +31,18 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --background: 227 36% 9%;
+  --background: 230 40% 7%;
   --foreground: 215 32% 92%;
-  --card: 222 40% 14%;
+  --card: 228 38% 12%;
   --card-foreground: 210 40% 96%;
-  --popover: 222 40% 14%;
-  --muted: 215 22% 26%;
+  --popover: 228 38% 12%;
+  --muted: 225 22% 22%;
   --muted-foreground: 215 13% 74%;
-  --accent: 215 22% 26%;
+  --accent: 225 22% 22%;
   --accent-foreground: 210 40% 96%;
-  --border: 215 18% 24%;
-  --ring: 222 89% 63%;
-  --primary: 222 84% 66%;
+  --border: 225 20% 20%;
+  --ring: 238 84% 65%;
+  --primary: 238 80% 68%;
   --primary-foreground: 0 0% 100%;
 }
 
@@ -217,8 +217,8 @@ a:hover {
   cursor: pointer;
   background: transparent;
   color: inherit;
-  transition: background 150ms ease, color 150ms ease, border-color 150ms ease, 
-              transform 150ms ease, box-shadow 150ms ease;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease,
+    transform 150ms ease, box-shadow 150ms ease;
 }
 
 .btn:focus-visible {
@@ -325,8 +325,8 @@ a:hover {
   color: hsl(var(--muted-foreground));
   font-size: clamp(0.75rem, 2vw, 0.85rem);
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease, border 140ms ease, 
-              padding 150ms ease, font-size 150ms ease;
+  transition: background 140ms ease, color 140ms ease, border 140ms ease,
+    padding 150ms ease, font-size 150ms ease;
 }
 
 .chip.is-active {
@@ -348,8 +348,9 @@ a:hover {
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
   box-shadow: var(--shadow-1);
-  transition: box-shadow 200ms ease;
+  transition: box-shadow 200ms ease, transform 200ms ease;
 }
+
 
 .card[data-elevation="0"] {
   box-shadow: none;
@@ -611,6 +612,7 @@ input[type="time"].input::-webkit-date-and-time-value {
   0% {
     background-position: -200% 0;
   }
+
   100% {
     background-position: 200% 0;
   }
@@ -641,6 +643,7 @@ input[type="time"].input::-webkit-date-and-time-value {
   align-items: center;
   justify-content: center;
   transition: transform 150ms ease, box-shadow 150ms ease;
+  cursor: pointer;
 }
 
 .fab button:hover {
@@ -648,9 +651,18 @@ input[type="time"].input::-webkit-date-and-time-value {
   box-shadow: 0 16px 40px -16px hsl(var(--primary) / 0.6);
 }
 
+[data-theme="dark"] .fab button {
+  box-shadow: 0 0 24px 4px hsl(var(--primary) / 0.35), var(--shadow-2);
+}
+
+[data-theme="dark"] .fab button:hover {
+  box-shadow: 0 0 32px 8px hsl(var(--primary) / 0.5), 0 16px 40px -16px hsl(var(--primary) / 0.6);
+}
+
 .fab button:active {
   transform: scale(0.98);
 }
+
 
 .icon {
   width: 1.15rem;
@@ -1068,7 +1080,7 @@ dialog::backdrop {
   gap: clamp(1.5rem, 5vw, 2.25rem);
 }
 
-.donut-body--both .donut-section + .donut-section {
+.donut-body--both .donut-section+.donut-section {
   padding-top: clamp(1.5rem, 5vw, 2.25rem);
   border-top: 1px solid hsl(var(--border));
 }
@@ -1179,7 +1191,9 @@ dialog::backdrop {
 
 .shadow-hover:hover {
   box-shadow: var(--shadow-2);
+  transform: translateY(-2px);
 }
+
 
 .hover-muted:hover {
   background: hsl(var(--muted) / 0.6);
@@ -1302,7 +1316,7 @@ dialog::backdrop {
     align-items: center;
   }
 
-  #dashboard-filter-card:not(.filters-expanded) .transactions-filter-summary-left > p {
+  #dashboard-filter-card:not(.filters-expanded) .transactions-filter-summary-left>p {
     display: none;
   }
 
@@ -1357,6 +1371,7 @@ dialog::backdrop {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .transactions-filter-panel,
   .filter-toggle-icon {
     transition: none;
@@ -1375,7 +1390,7 @@ dialog::backdrop {
     background: hsl(var(--card));
   }
 
-  #transactions-filter-form.sticky ~ * {
+  #transactions-filter-form.sticky~* {
     margin-top: 0;
   }
 }

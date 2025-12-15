@@ -1,7 +1,7 @@
 {% from "macros.html" import icon %}
 <div id="kpi-panel"
      hx-get="/components/kpis"
-     hx-trigger="transactions-changed from:body, filtersChanged from:#dashboard-filters"
+     hx-trigger="transactions-changed from:body, balance-anchors-changed from:body, filtersChanged from:#dashboard-filters"
      hx-swap="outerHTML"
      hx-include="#dashboard-filter-form"
      hx-indicator=".kpi-indicator">

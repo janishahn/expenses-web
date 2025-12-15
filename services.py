@@ -1,25 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 from sqlalchemy import case, delete, func, select, tuple_
 from sqlalchemy.orm import Session, joinedload
 
 from models import (
+    BalanceAnchor,
     Budget,
     Category,
     MonthlyRollup,
     RecurringRule,
     Transaction,
-    TransactionKind,
     TransactionType,
 )
 from periods import Period
 from recurrence import RecurringEngine
 from csv_utils import export_transactions, parse_csv
-from schemas import BudgetIn, CategoryIn, RecurringRuleIn, TransactionIn, ReportOptions
+from schemas import (
+    BalanceAnchorIn,
+    BudgetIn,
+    CategoryIn,
+    RecurringRuleIn,
+    ReportOptions,
+    TransactionIn,
+)
 
 
 def update_monthly_rollup(
@@ -83,7 +90,6 @@ def rebuild_monthly_rollups(session: Session, user_id: int) -> None:
         .where(
             Transaction.user_id == user_id,
             Transaction.deleted_at.is_(None),
-            Transaction.kind == TransactionKind.normal,
         )
         .group_by(year, month, Transaction.type)
     )
@@ -195,22 +201,21 @@ class TransactionService:
         txn = Transaction(
             user_id=self.user_id,
             date=data.date,
+            occurred_at=data.occurred_at,
             type=data.type,
-            kind=data.kind,
             amount_cents=data.amount_cents,
             category_id=data.category_id,
             note=data.note,
         )
         self.session.add(txn)
-        if data.kind == TransactionKind.normal:
-            update_monthly_rollup(
-                self.session,
-                self.user_id,
-                data.date,
-                data.type,
-                data.amount_cents,
-                increment=True,
-            )
+        update_monthly_rollup(
+            self.session,
+            self.user_id,
+            data.date,
+            data.type,
+            data.amount_cents,
+            increment=True,
+        )
         # Invalidate donut cache for the transaction period
         period = Period("transaction", data.date, data.date)
         metrics = MetricsService(self.session, self.user_id)
@@ -245,30 +250,26 @@ class TransactionService:
         old_date = txn.date
         old_type = txn.type
         old_amount = txn.amount_cents
-        old_kind = txn.kind
-
-        if old_kind == TransactionKind.normal:
-            update_monthly_rollup(
-                self.session,
-                self.user_id,
-                old_date,
-                old_type,
-                old_amount,
-                increment=False,
-            )
-        if data.kind == TransactionKind.normal:
-            update_monthly_rollup(
-                self.session,
-                self.user_id,
-                data.date,
-                data.type,
-                data.amount_cents,
-                increment=True,
-            )
+        update_monthly_rollup(
+            self.session,
+            self.user_id,
+            old_date,
+            old_type,
+            old_amount,
+            increment=False,
+        )
+        update_monthly_rollup(
+            self.session,
+            self.user_id,
+            data.date,
+            data.type,
+            data.amount_cents,
+            increment=True,
+        )
 
         txn.date = data.date
+        txn.occurred_at = data.occurred_at
         txn.type = data.type
-        txn.kind = data.kind
         txn.amount_cents = data.amount_cents
         txn.category_id = data.category_id
         txn.note = data.note
@@ -296,7 +297,7 @@ class TransactionService:
                 Transaction.deleted_at.is_(None),
                 Transaction.date.between(period.start, period.end),
             )
-            .order_by(Transaction.date.desc(), Transaction.id.desc())
+            .order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
             .offset(offset)
             .limit(limit)
         )
@@ -323,7 +324,7 @@ class TransactionService:
                 Transaction.deleted_at.is_(None),
                 Transaction.date.between(period.start, period.end),
             )
-            .order_by(Transaction.date.asc(), Transaction.id.asc())
+            .order_by(Transaction.occurred_at.asc(), Transaction.id.asc())
         )
         if filters.type:
             stmt = stmt.where(Transaction.type == filters.type)
@@ -343,7 +344,7 @@ class TransactionService:
             .where(
                 Transaction.user_id == self.user_id, Transaction.deleted_at.is_(None)
             )
-            .order_by(Transaction.date.desc(), Transaction.id.desc())
+            .order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
             .limit(limit)
         )
         return self.session.scalars(stmt).all()
@@ -354,15 +355,14 @@ class TransactionService:
             raise ValueError("Transaction not found")
         if txn.deleted_at is not None:
             return
-        if txn.kind == TransactionKind.normal:
-            update_monthly_rollup(
-                self.session,
-                self.user_id,
-                txn.date,
-                txn.type,
-                txn.amount_cents,
-                increment=False,
-            )
+        update_monthly_rollup(
+            self.session,
+            self.user_id,
+            txn.date,
+            txn.type,
+            txn.amount_cents,
+            increment=False,
+        )
         # Invalidate donut cache for the transaction period
         period = Period("transaction", txn.date, txn.date)
         metrics = MetricsService(self.session, self.user_id)
@@ -377,15 +377,14 @@ class TransactionService:
         if txn.deleted_at is None:
             return
         txn.deleted_at = None
-        if txn.kind == TransactionKind.normal:
-            update_monthly_rollup(
-                self.session,
-                self.user_id,
-                txn.date,
-                txn.type,
-                txn.amount_cents,
-                increment=True,
-            )
+        update_monthly_rollup(
+            self.session,
+            self.user_id,
+            txn.date,
+            txn.type,
+            txn.amount_cents,
+            increment=True,
+        )
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(Period("transaction", txn.date, txn.date))
         self.session.commit()
@@ -401,6 +400,109 @@ class TransactionService:
             .limit(limit)
         )
         return self.session.scalars(stmt).all()
+
+
+class BalanceAnchorService:
+    def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
+        self.session = session
+        self.user_id = user_id or get_current_user_id()
+
+    def list_all(self) -> list[BalanceAnchor]:
+        stmt = (
+            select(BalanceAnchor)
+            .where(BalanceAnchor.user_id == self.user_id)
+            .order_by(BalanceAnchor.as_of_at.desc(), BalanceAnchor.id.desc())
+        )
+        return self.session.scalars(stmt).all()
+
+    def create(self, data: BalanceAnchorIn) -> BalanceAnchor:
+        anchor = BalanceAnchor(
+            user_id=self.user_id,
+            as_of_at=data.as_of_at,
+            balance_cents=data.balance_cents,
+            note=data.note,
+        )
+        self.session.add(anchor)
+        self.session.commit()
+        self.session.refresh(anchor)
+        return anchor
+
+    def update(self, anchor_id: int, data: BalanceAnchorIn) -> BalanceAnchor:
+        anchor = self.session.get(BalanceAnchor, anchor_id)
+        if not anchor or anchor.user_id != self.user_id:
+            raise ValueError("Balance snapshot not found")
+        anchor.as_of_at = data.as_of_at
+        anchor.balance_cents = data.balance_cents
+        anchor.note = data.note
+        self.session.commit()
+        self.session.refresh(anchor)
+        return anchor
+
+    def delete(self, anchor_id: int) -> None:
+        anchor = self.session.get(BalanceAnchor, anchor_id)
+        if not anchor or anchor.user_id != self.user_id:
+            raise ValueError("Balance anchor not found")
+        self.session.delete(anchor)
+        self.session.commit()
+
+    def balance_as_of(self, target: datetime) -> int:
+        earliest = datetime(1970, 1, 1, 0, 0, 0)
+        if target < earliest:
+            return 0
+
+        anchor = self.session.scalar(
+            select(BalanceAnchor)
+            .where(
+                BalanceAnchor.user_id == self.user_id,
+                BalanceAnchor.as_of_at <= target,
+            )
+            .order_by(BalanceAnchor.as_of_at.desc(), BalanceAnchor.id.desc())
+            .limit(1)
+        )
+        if anchor:
+            baseline = int(anchor.balance_cents)
+            start = anchor.as_of_at
+            if start >= target:
+                return baseline
+        else:
+            baseline = 0
+            start = earliest
+
+        stmt = select(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            Transaction.type == TransactionType.income,
+                            Transaction.amount_cents,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("income"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            Transaction.type == TransactionType.expense,
+                            Transaction.amount_cents,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("expenses"),
+        ).where(
+            Transaction.user_id == self.user_id,
+            Transaction.deleted_at.is_(None),
+            Transaction.occurred_at > start,
+            Transaction.occurred_at <= target,
+        )
+        row = self.session.execute(stmt).one()
+        income = int(row.income or 0)
+        expenses = int(row.expenses or 0)
+        return baseline + income - expenses
 
 
 class MetricsService:
@@ -472,11 +574,14 @@ class MetricsService:
             ).where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
-                Transaction.kind == TransactionKind.normal,
                 Transaction.date.between(start, end),
             )
             row = self.session.execute(stmt).one()
             return int(row.income or 0), int(row.expenses or 0)
+
+        balance_at_end = BalanceAnchorService(self.session, self.user_id).balance_as_of(
+            datetime.combine(period.end, time.max)
+        )
 
         is_single_full_month = (
             period.start == month_start(period.start)
@@ -497,7 +602,7 @@ class MetricsService:
             return {
                 "income": income,
                 "expenses": expenses,
-                "balance": income - expenses,
+                "balance": balance_at_end,
             }
 
         if (
@@ -508,7 +613,7 @@ class MetricsService:
             return {
                 "income": income,
                 "expenses": expenses,
-                "balance": income - expenses,
+                "balance": balance_at_end,
             }
 
         start_month_end = month_end(period.start)
@@ -543,7 +648,11 @@ class MetricsService:
 
         income = start_income + full_income + end_income
         expenses = start_expenses + full_expenses + end_expenses
-        return {"income": income, "expenses": expenses, "balance": income - expenses}
+        return {
+            "income": income,
+            "expenses": expenses,
+            "balance": balance_at_end,
+        }
 
     def kpi_sparklines(self, period: Period, *, max_points: int = 12) -> dict[str, str]:
         def month_start(d: date) -> date:
@@ -592,7 +701,6 @@ class MetricsService:
             ).where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
-                Transaction.kind == TransactionKind.normal,
                 Transaction.date.between(start, end),
             )
             row = self.session.execute(stmt).one()
@@ -645,6 +753,7 @@ class MetricsService:
         income_series: list[int] = []
         expense_series: list[int] = []
         balance_series: list[int] = []
+        balance_service = BalanceAnchorService(self.session, self.user_id)
         for month in months:
             bucket_start = month
             bucket_end = month_end(month)
@@ -661,7 +770,9 @@ class MetricsService:
                 income, expenses = income_expense_between(bucket_start, bucket_end)
             income_series.append(income)
             expense_series.append(expenses)
-            balance_series.append(income - expenses)
+            balance_series.append(
+                balance_service.balance_as_of(datetime.combine(bucket_end, time.max))
+            )
 
         return {
             "income": build_points(income_series),
@@ -686,9 +797,7 @@ class MetricsService:
             if not category_ids
             else "cats_" + "_".join(str(i) for i in sorted(set(category_ids)))
         )
-        period_key = (
-            f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}"
-        )
+        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}"
         if period_key in self._category_breakdown_cache:
             return self._category_breakdown_cache[period_key]
 
@@ -699,7 +808,6 @@ class MetricsService:
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
                 Transaction.type == transaction_type,
-                Transaction.kind == TransactionKind.normal,
                 Transaction.date.between(period.start, period.end),
             )
             .group_by(Category.name)
@@ -827,7 +935,6 @@ class CSVService:
                 {
                     "date": row.date,
                     "type": row.type.value,
-                    "kind": row.kind.value,
                     "amount_cents": row.amount_cents,
                     "category": row.category,
                     "note": row.note,
@@ -842,27 +949,25 @@ class CSVService:
             raise ValueError("; ".join(errors))
         dates = set()
         for row in preview_rows:
-            kind = TransactionKind(row["kind"])
             txn_type = TransactionType(row["type"])
             txn = Transaction(
                 user_id=self.user_id,
                 date=row["date"],
+                occurred_at=datetime.combine(row["date"], time(12, 0)),
                 type=txn_type,
-                kind=kind,
                 amount_cents=row["amount_cents"],
                 category_id=row["category_id"],
                 note=row["note"],
             )
             self.session.add(txn)
-            if kind == TransactionKind.normal:
-                update_monthly_rollup(
-                    self.session,
-                    self.user_id,
-                    row["date"],
-                    txn_type,
-                    row["amount_cents"],
-                    increment=True,
-                )
+            update_monthly_rollup(
+                self.session,
+                self.user_id,
+                row["date"],
+                txn_type,
+                row["amount_cents"],
+                increment=True,
+            )
             dates.add(row["date"])
         # Invalidate donut cache for all affected periods
         metrics = MetricsService(self.session, self.user_id)
@@ -925,7 +1030,6 @@ class ReportService:
                 ).where(
                     Transaction.user_id == self.user_id,
                     Transaction.deleted_at.is_(None),
-                    Transaction.kind == TransactionKind.normal,
                     Transaction.date.between(options.start, options.end),
                 )
                 if options.transaction_type is not None:
@@ -935,7 +1039,11 @@ class ReportService:
                 row = self.session.execute(stmt).one()
                 income = int(row.income or 0)
                 expenses = int(row.expenses or 0)
-                kpis = {"income": income, "expenses": expenses, "balance": income - expenses}
+                kpis = {
+                    "income": income,
+                    "expenses": expenses,
+                    "balance": income - expenses,
+                }
 
         if wants_overview:
             assert kpis is not None
@@ -979,7 +1087,6 @@ class ReportService:
                 .where(
                     Transaction.user_id == self.user_id,
                     Transaction.deleted_at.is_(None),
-                    Transaction.kind == TransactionKind.normal,
                     Transaction.type == trend_type,
                     Transaction.date.between(options.start, options.end),
                 )
@@ -1006,70 +1113,97 @@ class ReportService:
                     Transaction.date.between(options.start, options.end),
                 )
             )
-            if not options.include_adjustments:
-                stmt = stmt.where(Transaction.kind == TransactionKind.normal)
             if options.transaction_type is not None:
                 stmt = stmt.where(Transaction.type == options.transaction_type)
             if options.category_ids:
                 stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
             if sort_order == "newest":
-                stmt = stmt.order_by(Transaction.date.desc(), Transaction.id.desc())
+                stmt = stmt.order_by(
+                    Transaction.occurred_at.desc(), Transaction.id.desc()
+                )
             else:
-                stmt = stmt.order_by(Transaction.date.asc(), Transaction.id.asc())
+                stmt = stmt.order_by(
+                    Transaction.occurred_at.asc(), Transaction.id.asc()
+                )
 
             transactions = self.session.scalars(stmt).all()
             if options.show_running_balance:
-                opening_stmt = select(
-                    func.coalesce(
-                        func.sum(
-                            case(
-                                (
-                                    Transaction.type == TransactionType.income,
-                                    Transaction.amount_cents,
-                                ),
-                                else_=0,
-                            )
-                        ),
-                        0,
-                    ).label("income"),
-                    func.coalesce(
-                        func.sum(
-                            case(
-                                (
-                                    Transaction.type == TransactionType.expense,
-                                    Transaction.amount_cents,
-                                ),
-                                else_=0,
-                            )
-                        ),
-                        0,
-                    ).label("expenses"),
-                ).where(
-                    Transaction.user_id == self.user_id,
-                    Transaction.deleted_at.is_(None),
-                    Transaction.date < options.start,
+                use_account_balance = (
+                    options.transaction_type is None and not options.category_ids
                 )
-                if not options.include_adjustments:
-                    opening_stmt = opening_stmt.where(
-                        Transaction.kind == TransactionKind.normal
+                if use_account_balance:
+                    balance_service = BalanceAnchorService(self.session, self.user_id)
+                    start_dt = datetime.combine(options.start, time.min)
+                    opening_balance = balance_service.balance_as_of(
+                        start_dt - timedelta(seconds=1)
                     )
-                if options.transaction_type is not None:
-                    opening_stmt = opening_stmt.where(
-                        Transaction.type == options.transaction_type
+                    anchors = self.session.scalars(
+                        select(BalanceAnchor)
+                        .where(
+                            BalanceAnchor.user_id == self.user_id,
+                            BalanceAnchor.as_of_at.between(
+                                datetime.combine(options.start, time.min),
+                                datetime.combine(options.end, time.max),
+                            ),
+                        )
+                        .order_by(BalanceAnchor.as_of_at.asc(), BalanceAnchor.id.asc())
+                    ).all()
+                    next_anchor_idx = 0
+                else:
+                    opening_stmt = select(
+                        func.coalesce(
+                            func.sum(
+                                case(
+                                    (
+                                        Transaction.type == TransactionType.income,
+                                        Transaction.amount_cents,
+                                    ),
+                                    else_=0,
+                                )
+                            ),
+                            0,
+                        ).label("income"),
+                        func.coalesce(
+                            func.sum(
+                                case(
+                                    (
+                                        Transaction.type == TransactionType.expense,
+                                        Transaction.amount_cents,
+                                    ),
+                                    else_=0,
+                                )
+                            ),
+                            0,
+                        ).label("expenses"),
+                    ).where(
+                        Transaction.user_id == self.user_id,
+                        Transaction.deleted_at.is_(None),
+                        Transaction.date < options.start,
                     )
-                if options.category_ids:
-                    opening_stmt = opening_stmt.where(
-                        Transaction.category_id.in_(options.category_ids)
-                    )
+                    if options.transaction_type is not None:
+                        opening_stmt = opening_stmt.where(
+                            Transaction.type == options.transaction_type
+                        )
+                    if options.category_ids:
+                        opening_stmt = opening_stmt.where(
+                            Transaction.category_id.in_(options.category_ids)
+                        )
 
-                opening_row = self.session.execute(opening_stmt).one()
-                opening_income = int(opening_row.income or 0)
-                opening_expenses = int(opening_row.expenses or 0)
-                opening_balance = opening_income - opening_expenses
+                    opening_row = self.session.execute(opening_stmt).one()
+                    opening_income = int(opening_row.income or 0)
+                    opening_expenses = int(opening_row.expenses or 0)
+                    opening_balance = opening_income - opening_expenses
                 data["opening_balance_cents"] = opening_balance
 
                 running = opening_balance
                 for txn in transactions:
+                    if use_account_balance:
+                        while (
+                            next_anchor_idx < len(anchors)
+                            and anchors[next_anchor_idx].as_of_at <= txn.occurred_at
+                        ):
+                            running = int(anchors[next_anchor_idx].balance_cents)
+                            next_anchor_idx += 1
                     if txn.type == TransactionType.income:
                         running += txn.amount_cents
                     else:
@@ -1177,7 +1311,6 @@ class BudgetService:
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
-                Transaction.kind == TransactionKind.normal,
                 Transaction.type == TransactionType.expense,
                 Transaction.date.between(start, end),
             )

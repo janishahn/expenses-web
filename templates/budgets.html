@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-{% set expense_categories = categories | selectattr('type.value', 'equalto', 'expense') | selectattr('archived_at', 'none') | list %}
+{% set expense_categories = categories | selectattr('type.value', 'equalto', 'expense') | selectattr('archived_at',
+'none') | list %}
 <section class="space-y-6">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -41,9 +42,11 @@
                 </label>
                 <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                     Amount
-                    <input type="text" name="amount" placeholder="e.g., 500.00" inputmode="decimal" class="input" required>
+                    <input type="text" name="amount" placeholder="e.g., 500.00" inputmode="decimal" class="input"
+                        required>
                 </label>
-                <p class="text-xs text-slate-500 dark:text-slate-400">Submitting again for the same month/scope replaces the amount.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Submitting again for the same month/scope replaces
+                    the amount.</p>
             </div>
             <div class="separator"></div>
             <div class="card-footer">
@@ -57,59 +60,91 @@
                 <div class="card-header flex items-center justify-between">
                     <div>
                         <p class="metric-eyebrow">Overview</p>
-                        <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">{{ year }}-{{ '%02d'|format(month) }} budgets</h2>
+                        <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">{{ year
+                            }}-{{ '%02d'|format(month) }} budgets</h2>
                     </div>
                     <span class="badge badge-muted">{{ budgets|length }} total</span>
                 </div>
                 <div class="separator"></div>
-                <div class="card-body p-0">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Scope</th>
-                                <th class="text-right">Budget</th>
-                                <th class="text-right">Spent</th>
-                                <th class="text-right">Remaining</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for budget in budgets %}
-                            {% set p = progress.get(budget.id, {}) %}
-                            {% set spent = p.get('spent_cents', 0) %}
-                            {% set remaining = p.get('remaining_cents', 0) %}
-                            {% set over = remaining < 0 %}
-                            <tr>
-                                <td class="font-medium text-slate-800 dark:text-slate-100">
-                                    {{ budget.category.name if budget.category else "Overall" }}
-                                </td>
-                                <td class="text-right tabular">{{ budget.amount_cents|currency }} €</td>
-                                <td class="text-right tabular text-rose-500">{{ spent|currency }} €</td>
-                                <td class="text-right tabular {% if over %}text-rose-500{% else %}text-emerald-500{% endif %}">
-                                    {% if over %}-{% endif %}{{ remaining|abs|currency }} €
-                                </td>
-                                <td class="text-right">
-                                    <form method="post" action="/budgets/{{ budget.id }}/delete?month={{ month_value }}">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                        <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete budget">
-                                            {{ icon("trash-2", class="icon") }}
-                                        </button>
-                                    </form>
-                                </td>
+                <!-- Mobile card layout -->
+                <div class="lg:hidden space-y-3 p-4">
+                    {% for budget in budgets %}
+                    {% set p = progress.get(budget.id, {}) %}
+                    {% set spent = p.get('spent_cents', 0) %}
+                    {% set remaining = p.get('remaining_cents', 0) %}
+                    {% set over = remaining < 0 %} <div class="card shadow-hover p-4 flex gap-4 items-start">
+                        <div class="flex-1 space-y-1">
+                            <p class="font-semibold text-slate-800 dark:text-slate-100">
+                                {{ budget.category.name if budget.category else "Overall" }}
+                            </p>
+                            <p class="text-sm text-slate-500 dark:text-slate-400">
+                                Budget: <span class="tabular">{{ budget.amount_cents|currency }} €</span>
+                            </p>
+                            <div class="flex gap-4 text-sm">
+                                <span class="text-rose-500 tabular">Spent: {{ spent|currency }} €</span>
+                                <span class="{% if over %}text-rose-500{% else %}text-emerald-500{% endif %} tabular">
+                                    Left: {% if over %}-{% endif %}{{ remaining|abs|currency }} €
+                                </span>
+                            </div>
+                        </div>
+                        <form method="post" action="/budgets/{{ budget.id }}/delete?month={{ month_value }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete budget">
+                                {{ icon("trash-2", class="icon") }}
+                            </button>
+                        </form>
+                </div>
+                {% endfor %}
+            </div>
+            <!-- Desktop table layout -->
+            <div class="card-body p-0 hidden lg:block">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Scope</th>
+                            <th class="text-right">Budget</th>
+                            <th class="text-right">Spent</th>
+                            <th class="text-right">Remaining</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for budget in budgets %}
+                        {% set p = progress.get(budget.id, {}) %}
+                        {% set spent = p.get('spent_cents', 0) %}
+                        {% set remaining = p.get('remaining_cents', 0) %}
+                        {% set over = remaining < 0 %} <tr>
+                            <td class="font-medium text-slate-800 dark:text-slate-100">
+                                {{ budget.category.name if budget.category else "Overall" }}
+                            </td>
+                            <td class="text-right tabular">{{ budget.amount_cents|currency }} €</td>
+                            <td class="text-right tabular text-rose-500">{{ spent|currency }} €</td>
+                            <td
+                                class="text-right tabular {% if over %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                                {% if over %}-{% endif %}{{ remaining|abs|currency }} €
+                            </td>
+                            <td class="text-right">
+                                <form method="post" action="/budgets/{{ budget.id }}/delete?month={{ month_value }}">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete budget">
+                                        {{ icon("trash-2", class="icon") }}
+                                    </button>
+                                </form>
+                            </td>
                             </tr>
                             {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+                    </tbody>
+                </table>
             </div>
-            {% else %}
-            <div class="card shadow-hover text-center p-10 space-y-3">
-                <p class="font-semibold text-slate-800 dark:text-slate-100">No budgets for this month</p>
-                <p class="text-slate-500 dark:text-slate-400">Create an overall budget or set category limits.</p>
-            </div>
-            {% endif %}
         </div>
+
+        {% else %}
+        <div class="card shadow-hover text-center p-10 space-y-3">
+            <p class="font-semibold text-slate-800 dark:text-slate-100">No budgets for this month</p>
+            <p class="text-slate-500 dark:text-slate-400">Create an overall budget or set category limits.</p>
+        </div>
+        {% endif %}
+    </div>
     </div>
 </section>
 {% endblock %}
-

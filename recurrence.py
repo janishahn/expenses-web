@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -11,7 +11,6 @@ from models import (
     MonthDayPolicy,
     RecurringRule,
     Transaction,
-    TransactionKind,
 )
 
 
@@ -160,13 +159,13 @@ class RecurringEngine:
         txn = Transaction(
             user_id=rule.user_id,
             date=occurrence_date,
+            occurred_at=datetime.combine(occurrence_date, time(12, 0)),
             type=rule.type,
             amount_cents=rule.amount_cents,
             category_id=rule.category_id,
             origin_rule_id=rule.id,
             occurrence_date=occurrence_date,
             note=rule.name,
-            kind=TransactionKind.normal,
         )
         self.session.add(txn)
         update_monthly_rollup(
