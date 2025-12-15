@@ -21,15 +21,17 @@
                     <p class="metric-eyebrow">{{ rule.category.name if rule.category else "Uncategorized" }}</p>
                     <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100">{{ rule.amount_cents|currency }} €</h2>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
-                        Every {{ rule.interval_count }} {{ rule.interval_unit.value.replace('_',' ') }} • Next run {{ rule.next_occurrence }}
+                        Every {{ rule.interval_count }} {{ rule.interval_unit.value }}{% if rule.interval_count > 1 %}s{% endif %} • Next: {{ rule.next_occurrence }}
                     </p>
-                    <p class="text-xs text-slate-500 dark:text-slate-400">Anchor: {{ rule.anchor_date }} • Policy: {{ rule.month_day_policy.value.replace('_',' ').title() }}</p>
+                    {% if rule.name %}
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ rule.name }}</p>
+                    {% endif %}
                 </div>
                 <div class="flex items-center gap-2">
                     <form hx-post="/recurring/{{ rule.id }}/toggle" hx-swap="none" class="flex items-center gap-2">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="auto_post" value="{{ 'false' if rule.auto_post else 'true' }}">
-                        <span class="text-xs text-slate-500">{{ "Auto-post" }}</span>
+                        <span class="text-xs text-slate-500">Auto</span>
                         <button type="submit" class="btn btn-secondary btn-sm">
                             {{ "On" if rule.auto_post else "Off" }}
                         </button>
@@ -45,7 +47,7 @@
                             data-rule-type="{{ rule.type.value }}"
                             data-rule-amount="{{ '%.2f' % (rule.amount_cents / 100) }}"
                             data-rule-category="{{ rule.category_id }}"
-                            data-rule-anchor="{{ rule.anchor_date }}"
+                            data-rule-start="{{ rule.anchor_date }}"
                             data-rule-interval-unit="{{ rule.interval_unit.value }}"
                             data-rule-interval-count="{{ rule.interval_count }}"
                             data-rule-next="{{ rule.next_occurrence }}"
@@ -65,7 +67,7 @@
             </div>
             <div class="card-footer flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <span class="pill">{{ rule.type.value|title }}</span>
-                <span class="pill">{{ "Auto" if rule.auto_post else "Manual" }}</span>
+                <span class="pill">{{ "Automatic" if rule.auto_post else "Manual" }}</span>
                 {% if rule.skip_weekends %}
                 <span class="pill">Skips weekends</span>
                 {% endif %}
@@ -87,13 +89,13 @@
 
     <div class="ghost-card filter-bar flex-col sm:flex-row gap-4 text-xs text-slate-500 dark:text-slate-400">
         <div class="flex items-center gap-2">
-            <span class="pill">Snap to start</span>
-            Moves the occurrence to the start of the month when the anchor exceeds month length.
+            <span class="pill">Post on last day</span>
+            Moves the occurrence to the end of the month when the day doesn't exist.
         </div>
         <div class="filter-divider hidden sm:block"></div>
         <div class="flex items-center gap-2">
-            <span class="pill">Snap to end</span>
-            Pushes the entry to the final day to keep cadence.
+            <span class="pill">Skip that month</span>
+            Skips months that don't have enough days (e.g., Feb 30).
         </div>
     </div>
 </section>
@@ -101,6 +103,8 @@
 <dialog id="rule-modal" class="modal">
     <form id="rule-form" method="post" action="/recurring" data-create-action="/recurring" class="modal-form space-y-4">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next_occurrence" id="rule-next-occurrence" value="">
+        
         <div class="flex items-center justify-between">
             <div>
                 <p class="metric-eyebrow">Editor</p>
@@ -110,10 +114,12 @@
                 {{ icon("x", class="icon") }}
             </button>
         </div>
+        
+        <!-- Basic Fields -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                Name
-                <input type="text" name="name" class="input" placeholder="e.g., Rent">
+                Name <span class="font-normal text-slate-400">(optional)</span>
+                <input type="text" name="name" class="input" placeholder="e.g., Netflix, Rent, Salary">
             </label>
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 Type
@@ -125,7 +131,7 @@
             </label>
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 Amount
-                <input type="text" name="amount" class="input" required>
+                <input type="text" name="amount" class="input" required placeholder="0.00">
             </label>
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 Category
@@ -135,50 +141,74 @@
                     {% endfor %}
                 </select>
             </label>
-            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                Anchor date
-                <input type="date" name="anchor_date" class="input" required>
-            </label>
-            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                Next occurrence
-                <input type="date" name="next_occurrence" class="input" required>
-            </label>
-            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                Interval unit
-                <select name="interval_unit" class="select">
-                    {% for unit in IntervalUnit %}
-                    <option value="{{ unit.value }}">{{ unit.value.replace('_',' ').title() }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                Interval count
-                <input type="number" name="interval_count" min="1" value="1" class="input">
-            </label>
-            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                End date
-                <input type="date" name="end_date" class="input">
-            </label>
-            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                Month-day policy
-                <select name="month_day_policy" class="select">
-                    {% for policy in MonthDayPolicy %}
-                    <option value="{{ policy.value }}">{{ policy.value.replace('_',' ').title() }}</option>
-                    {% endfor %}
-                </select>
-            </label>
         </div>
-        <div class="flex flex-wrap gap-4">
-            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                <input type="checkbox" name="auto_post" checked>
-                Auto-post to ledger
-            </label>
-            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                <input type="checkbox" name="skip_weekends">
-                Skip weekends
-            </label>
+        
+        <!-- Schedule Section -->
+        <div class="border-t border-slate-200 dark:border-slate-700 pt-4">
+            <p class="text-sm font-semibold text-slate-600 dark:text-slate-300 mb-3">Schedule</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Start date
+                    <input type="date" name="start_date" id="rule-start-date" class="input" required>
+                </label>
+                <div class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    <span>Repeats</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-400 font-normal">Every</span>
+                        <input type="number" name="interval_count" id="rule-interval-count" min="1" value="1" class="input w-20" style="width: 5rem;">
+                        <select name="interval_unit" id="rule-interval-unit" class="select flex-1">
+                            {% for unit in IntervalUnit %}
+                            <option value="{{ unit.value }}">{{ unit.value }}(s)</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    End date <span class="font-normal text-slate-400">(optional)</span>
+                    <input type="date" name="end_date" class="input" placeholder="Leave blank for no end">
+                </label>
+            </div>
         </div>
-        <div class="flex justify-end gap-3">
+        
+        <!-- Live Preview -->
+        <div id="occurrence-preview" class="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Upcoming occurrences</p>
+            <div id="preview-dates" class="flex flex-wrap gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <span class="text-slate-400 italic">Enter a start date to see preview</span>
+            </div>
+        </div>
+        
+        <!-- Advanced Options -->
+        <details class="border-t border-slate-200 dark:border-slate-700 pt-3" id="advanced-options">
+            <summary class="text-sm font-semibold text-slate-600 dark:text-slate-300 cursor-pointer hover:text-slate-800 dark:hover:text-slate-100">
+                Advanced options
+            </summary>
+            <div class="mt-3 space-y-3">
+                <div class="flex flex-wrap gap-4">
+                    <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <input type="checkbox" name="auto_post" checked>
+                        Post automatically
+                    </label>
+                    <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <input type="checkbox" name="skip_weekends">
+                        Skip weekends (post on next Monday)
+                    </label>
+                </div>
+                <div id="month-day-policy-section" class="hidden">
+                    <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                        If day doesn't exist in month
+                        <select name="month_day_policy" id="rule-month-day-policy" class="select">
+                            <option value="snap_to_end">Post on last day of month</option>
+                            <option value="skip">Skip that month</option>
+                            <option value="carry_forward">Use previous month's actual day</option>
+                        </select>
+                        <p class="text-xs font-normal text-slate-400 mt-1">For example, if you set the 31st and February only has 28 days.</p>
+                    </label>
+                </div>
+            </div>
+        </details>
+        
+        <div class="flex justify-end gap-3 pt-2">
             <button type="button" class="btn btn-ghost" onclick="document.getElementById('rule-modal').close()">Cancel</button>
             <button type="submit" class="btn btn-primary btn-lg" id="rule-modal-submit">Save rule</button>
         </div>
@@ -190,15 +220,111 @@
 const ruleModal = document.getElementById("rule-modal");
 const ruleForm = document.getElementById("rule-form");
 if (!ruleModal || !ruleForm) return;
+
 const defaultAction = ruleForm.getAttribute("data-create-action");
 const modalTitle = document.getElementById("rule-modal-title");
 const modalSubmit = document.getElementById("rule-modal-submit");
+
+// Form elements for preview
+const startDateInput = document.getElementById("rule-start-date");
+const intervalCountInput = document.getElementById("rule-interval-count");
+const intervalUnitSelect = document.getElementById("rule-interval-unit");
+const monthDayPolicySelect = document.getElementById("rule-month-day-policy");
+const skipWeekendsCheckbox = ruleForm.elements["skip_weekends"];
+const previewDates = document.getElementById("preview-dates");
+const monthDayPolicySection = document.getElementById("month-day-policy-section");
+const nextOccurrenceHidden = document.getElementById("rule-next-occurrence");
+
+let previewDebounceTimer = null;
+
+// Update preview when form changes
+function updatePreview() {
+    const startDate = startDateInput.value;
+    if (!startDate) {
+        previewDates.innerHTML = '<span class="text-slate-400 italic">Enter a start date to see preview</span>';
+        return;
+    }
+
+    const data = {
+        start_date: startDate,
+        interval_unit: intervalUnitSelect.value,
+        interval_count: parseInt(intervalCountInput.value) || 1,
+        month_day_policy: monthDayPolicySelect.value,
+        skip_weekends: skipWeekendsCheckbox.checked
+    };
+
+    fetch("/api/recurring/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    })
+    .then(res => res.json())
+    .then(result => {
+        if (result.occurrences && result.occurrences.length > 0) {
+            const formatted = result.occurrences.map(d => {
+                const date = new Date(d + "T00:00:00");
+                return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+            });
+            previewDates.innerHTML = formatted.map(d => 
+                `<span class="px-2 py-1 bg-primary/10 text-primary rounded-md text-xs font-medium">${d}</span>`
+            ).join("");
+        } else {
+            previewDates.innerHTML = '<span class="text-slate-400 italic">Unable to calculate preview</span>';
+        }
+    })
+    .catch(() => {
+        previewDates.innerHTML = '<span class="text-slate-400 italic">Preview unavailable</span>';
+    });
+}
+
+function debouncedPreview() {
+    clearTimeout(previewDebounceTimer);
+    previewDebounceTimer = setTimeout(updatePreview, 300);
+}
+
+// Show/hide month-day policy based on start date and interval
+function updateMonthDayPolicyVisibility() {
+    const startDate = startDateInput.value;
+    const intervalUnit = intervalUnitSelect.value;
+    
+    if (!startDate) {
+        monthDayPolicySection.classList.add("hidden");
+        return;
+    }
+    
+    const day = new Date(startDate + "T00:00:00").getDate();
+    const showPolicy = (intervalUnit === "month" || intervalUnit === "year") && day > 28;
+    
+    if (showPolicy) {
+        monthDayPolicySection.classList.remove("hidden");
+        // Auto-open advanced options if policy is relevant
+        document.getElementById("advanced-options").open = true;
+    } else {
+        monthDayPolicySection.classList.add("hidden");
+    }
+}
+
+// Attach event listeners
+startDateInput.addEventListener("change", () => {
+    updateMonthDayPolicyVisibility();
+    debouncedPreview();
+});
+intervalCountInput.addEventListener("input", debouncedPreview);
+intervalUnitSelect.addEventListener("change", () => {
+    updateMonthDayPolicyVisibility();
+    debouncedPreview();
+});
+monthDayPolicySelect.addEventListener("change", debouncedPreview);
+skipWeekendsCheckbox.addEventListener("change", debouncedPreview);
 
 function openRuleModal(mode = "create", data = {}) {
     ruleForm.reset();
     ruleForm.action = defaultAction;
     modalTitle.textContent = mode === "create" ? "Add recurring rule" : "Edit recurring rule";
     modalSubmit.textContent = mode === "create" ? "Save rule" : "Update rule";
+    nextOccurrenceHidden.value = "";
+    monthDayPolicySection.classList.add("hidden");
+    previewDates.innerHTML = '<span class="text-slate-400 italic">Enter a start date to see preview</span>';
 
     if (mode === "edit") {
         ruleForm.action = `/recurring/${data.id}`;
@@ -206,14 +332,19 @@ function openRuleModal(mode = "create", data = {}) {
         ruleForm.elements["type"].value = data.type;
         ruleForm.elements["amount"].value = data.amount;
         ruleForm.elements["category_id"].value = data.category;
-        ruleForm.elements["anchor_date"].value = data.anchor || "";
-        ruleForm.elements["next_occurrence"].value = data.next || "";
+        ruleForm.elements["start_date"].value = data.start || "";
         ruleForm.elements["interval_unit"].value = data.intervalUnit;
         ruleForm.elements["interval_count"].value = data.intervalCount;
         ruleForm.elements["end_date"].value = data.end || "";
         ruleForm.elements["month_day_policy"].value = data.policy;
         ruleForm.elements["auto_post"].checked = data.auto === "true";
         ruleForm.elements["skip_weekends"].checked = data.weekends === "true";
+        // Preserve next_occurrence for edits
+        nextOccurrenceHidden.value = data.next || "";
+        
+        // Update visibility and preview after setting values
+        updateMonthDayPolicyVisibility();
+        updatePreview();
     }
 
     ruleModal.showModal();
@@ -231,7 +362,7 @@ document.querySelectorAll("[data-rule-edit]").forEach((btn) => {
             type: btn.dataset.ruleType,
             amount: btn.dataset.ruleAmount,
             category: btn.dataset.ruleCategory,
-            anchor: btn.dataset.ruleAnchor,
+            start: btn.dataset.ruleStart,
             next: btn.dataset.ruleNext,
             intervalUnit: btn.dataset.ruleIntervalUnit,
             intervalCount: btn.dataset.ruleIntervalCount,

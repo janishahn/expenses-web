@@ -1,73 +1,109 @@
 {% extends "base.html" %}
 {% block content %}
-<header>
-    <h1>Posted Occurrences for {{ rule.name or "Rule #" + rule.id|string }}</h1>
-    <div>
-        <a href="/recurring" class="button secondary">← Back to Recurring</a>
+<section class="space-y-6">
+    <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Rule Details</p>
+            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">
+                {{ rule.name or "Rule #" + rule.id|string }}
+            </h1>
+        </div>
+        <a href="/recurring" class="btn btn-ghost">← Back to Recurring</a>
+    </header>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                <div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Name</p>
+                    <p class="text-slate-800 dark:text-slate-100 font-medium">{{ rule.name or "-" }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Type</p>
+                    <p class="text-slate-800 dark:text-slate-100 font-medium">{{ rule.type.value|title }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Amount</p>
+                    <p class="text-slate-800 dark:text-slate-100 font-medium">{{ rule.amount_cents|currency }} €</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Category</p>
+                    <p class="text-slate-800 dark:text-slate-100 font-medium">{{ rule.category.name if rule.category
+                        else "-" }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Schedule</p>
+                    <p class="text-slate-800 dark:text-slate-100 font-medium">
+                        Every {{ rule.interval_count }} {{ rule.interval_unit.value }}{% if rule.interval_count > 1
+                        %}s{% endif %}
+                    </p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Start Date</p>
+                    <p class="text-slate-800 dark:text-slate-100 font-medium">{{ rule.anchor_date }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Next Occurrence
+                    </p>
+                    <p class="text-slate-800 dark:text-slate-100 font-medium">{{ rule.next_occurrence }}</p>
+                </div>
+                <div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Post
+                        Automatically</p>
+                    <p class="text-slate-800 dark:text-slate-100 font-medium">{{ "Yes" if rule.auto_post else "No" }}
+                    </p>
+                </div>
+            </div>
+        </div>
     </div>
-</header>
 
-<section>
-    <h3>Rule Details</h3>
-    <table>
-        <tr>
-            <th>Name</th>
-            <td>{{ rule.name or "-" }}</td>
-        </tr>
-        <tr>
-            <th>Type</th>
-            <td>{{ rule.type.value }}</td>
-        </tr>
-        <tr>
-            <th>Amount</th>
-            <td>{{ rule.amount_cents|currency }} €</td>
-        </tr>
-        <tr>
-            <th>Category</th>
-            <td>{{ rule.category.name if rule.category else "-" }}</td>
-        </tr>
-        <tr>
-            <th>Schedule</th>
-            <td>Every {{ rule.interval_count }} {{ rule.interval_unit.value }}{% if rule.interval_count > 1 %}s{% endif %}</td>
-        </tr>
-        <tr>
-            <th>Next Occurrence</th>
-            <td>{{ rule.next_occurrence }}</td>
-        </tr>
-        <tr>
-            <th>Auto Post</th>
-            <td>{{ "Yes" if rule.auto_post else "No" }}</td>
-        </tr>
-    </table>
-</section>
-
-<section>
-    <h3>Posted Transactions ({{ occurrences|length }})</h3>
-    <table>
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Amount</th>
-                <th>Category</th>
-                <th>Note</th>
-                <th>Created</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for txn in occurrences %}
-            <tr>
-                <td>{{ txn.occurrence_date }}</td>
-                <td>{{ txn.amount_cents|currency }} €</td>
-                <td>{{ txn.category.name if txn.category else "-" }}</td>
-                <td>{{ txn.note or "" }}</td>
-                <td>{{ txn.created_at }}</td>
-            </tr>
+    <div class="card">
+        <div class="card-body">
+            <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">
+                Posted Transactions ({{ occurrences|length }})
+            </h3>
+            {% if occurrences %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-slate-200 dark:border-slate-700">
+                            <th
+                                class="text-left py-2 px-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Date</th>
+                            <th
+                                class="text-left py-2 px-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Amount</th>
+                            <th
+                                class="text-left py-2 px-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Category</th>
+                            <th
+                                class="text-left py-2 px-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Note</th>
+                            <th
+                                class="text-left py-2 px-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for txn in occurrences %}
+                        <tr class="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                            <td class="py-2 px-3 text-slate-800 dark:text-slate-100">{{ txn.occurrence_date }}</td>
+                            <td class="py-2 px-3 text-slate-800 dark:text-slate-100">{{ txn.amount_cents|currency }} €
+                            </td>
+                            <td class="py-2 px-3 text-slate-600 dark:text-slate-300">{{ txn.category.name if
+                                txn.category else "-" }}</td>
+                            <td class="py-2 px-3 text-slate-600 dark:text-slate-300">{{ txn.note or "-" }}</td>
+                            <td class="py-2 px-3 text-slate-500 dark:text-slate-400 text-xs">{{
+                                txn.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
             {% else %}
-            <tr>
-                <td colspan="5">No occurrences posted yet.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+            <p class="text-slate-500 dark:text-slate-400 py-4 text-center">No occurrences posted yet.</p>
+            {% endif %}
+        </div>
+    </div>
 </section>
 {% endblock %}

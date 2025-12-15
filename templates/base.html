@@ -125,21 +125,21 @@
                 {% block content %}{% endblock %}
             </div>
         </main>
+        {% set show_fab = path in ['/', '/transactions'] or path.startswith('/transactions') %}
+        {% if show_fab %}
+        <div class="fab md:right-8">
+            <button type="button" data-open-transaction data-tooltip="Add transaction">
+                <i data-lucide="plus" class="icon"></i>
+            </button>
+        </div>
+        {% if categories is defined %}
+        {% include "components/transaction_modal.html" %}
+        {% endif %}
+        {% endif %}
+        {% include "components/balance_anchor_modal.html" %}
+        {% include "components/balance_anchor_edit_modal.html" %}
+        <div id="toast-root" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
-    {% set show_fab = path in ['/', '/transactions'] or path.startswith('/transactions') %}
-    {% if show_fab %}
-    <div class="fab md:right-8">
-        <button type="button" data-open-transaction data-tooltip="Add transaction">
-            <i data-lucide="plus" class="icon"></i>
-        </button>
-    </div>
-    {% if categories is defined %}
-    {% include "components/transaction_modal.html" %}
-    {% endif %}
-    {% endif %}
-    {% include "components/balance_anchor_modal.html" %}
-    {% include "components/balance_anchor_edit_modal.html" %}
-    <div id="toast-root" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
 
 
     <script>
