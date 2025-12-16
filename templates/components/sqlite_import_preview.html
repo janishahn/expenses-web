@@ -11,7 +11,7 @@
                 <div class="card-body space-y-1">
                     <p class="metric-eyebrow">Date range</p>
                     <p class="font-semibold text-slate-800 dark:text-slate-100">
-                        {{ preview.min_transaction_date or "—" }} → {{ preview.max_transaction_date or "—" }}
+                        {{ preview.min_transaction_date|eurodate if preview.min_transaction_date else "—" }} → {{ preview.max_transaction_date|eurodate if preview.max_transaction_date else "—" }}
                     </p>
                 </div>
             </div>
@@ -147,9 +147,9 @@
                         <td class="capitalize">{{ r.legacy_type.value }}</td>
                         <td>{{ r.legacy_category }}</td>
                         <td>{{ r.amount_cents|currency }} €</td>
-                        <td>{{ r.start_date }}</td>
+                        <td>{{ r.start_date|eurodate }}</td>
                         <td>{{ r.recurrence_type }} / {{ r.interval }}</td>
-                        <td>{{ r.computed_next_occurrence or "—" }}</td>
+                        <td>{{ r.computed_next_occurrence|eurodate if r.computed_next_occurrence else "—" }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

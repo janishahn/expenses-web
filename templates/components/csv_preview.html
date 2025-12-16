@@ -28,7 +28,7 @@
             <tbody>
             {% for row in rows %}
                 <tr>
-                    <td>{{ row.date }}</td>
+                    <td>{{ row.date|eurodate }}</td>
                     <td>{{ row.type }}</td>
                     <td>{{ row.category }}</td>
                     <td>{{ row.amount_cents|currency }} €</td>
