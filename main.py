@@ -82,12 +82,11 @@ APP_VERSION = _load_app_version()
 
 def format_currency(cents: int, options: Optional[dict] = None) -> str:
     include_cents = True
-    if options is None:
-        include_cents = True
-    elif isinstance(options, dict):
-        include_cents = options.get("include_cents", True)
-    else:
-        include_cents = bool(getattr(options, "include_cents", True))
+    if options is not None:
+        if isinstance(options, dict):
+            include_cents = options.get("include_cents", True)
+        else:
+            include_cents = bool(getattr(options, "include_cents", True))
     if include_cents:
         return f"{cents / 100:,.2f}".replace(",", " ").replace(".", ",")
     return f"{cents / 100:,.0f}".replace(",", " ")
@@ -191,11 +190,7 @@ def render(request: Request, template: str, context: dict[str, object]) -> HTMLR
 
 
 def recurring_payload_from_form(form) -> RecurringRuleIn:
-    # Start date is the user-facing field (renamed from anchor_date)
     start_date = date.fromisoformat(form["start_date"])
-
-    # For new rules, next_occurrence = start_date
-    # For edits, next_occurrence may be provided (hidden field)
     next_occurrence_raw = form.get("next_occurrence")
     if next_occurrence_raw:
         next_occurrence = date.fromisoformat(next_occurrence_raw)
@@ -208,7 +203,7 @@ def recurring_payload_from_form(form) -> RecurringRuleIn:
         currency_code=CurrencyCode(form.get("currency_code", "EUR")),
         amount_cents=parse_amount(form["amount"]),
         category_id=int(form["category_id"]),
-        anchor_date=start_date,  # anchor_date = start_date internally
+        anchor_date=start_date,
         interval_unit=IntervalUnit(form["interval_unit"]),
         interval_count=int(form.get("interval_count", 1) or 1),
         next_occurrence=next_occurrence,
@@ -379,11 +374,7 @@ async def create_balance_anchor(request: Request, db: Session = Depends(get_db))
     next_url = form.get("next") or request.app.url_path_for("dashboard")
     try:
         note_raw = form.get("note")
-        note = (
-            str(note_raw).strip()
-            if isinstance(note_raw, str) and str(note_raw).strip()
-            else None
-        )
+        note = note_raw.strip() if isinstance(note_raw, str) and note_raw.strip() else None
         data = BalanceAnchorIn(
             as_of_at=datetime.fromisoformat(str(form["as_of_at"])),
             balance_cents=parse_amount(str(form["balance"]), allow_negative=True),
@@ -433,11 +424,7 @@ async def edit_balance_anchor(
     next_url = form.get("next") or request.app.url_path_for("admin_page")
     try:
         note_raw = form.get("note")
-        note = (
-            str(note_raw).strip()
-            if isinstance(note_raw, str) and str(note_raw).strip()
-            else None
-        )
+        note = note_raw.strip() if isinstance(note_raw, str) and note_raw.strip() else None
         data = BalanceAnchorIn(
             as_of_at=datetime.fromisoformat(str(form["as_of_at"])),
             balance_cents=parse_amount(str(form["balance"]), allow_negative=True),
@@ -653,9 +640,6 @@ def recurring_occurrences(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    from sqlalchemy import select
-    from models import Transaction
-
     stmt = (
         select(Transaction)
         .where(
@@ -703,7 +687,6 @@ async def preview_recurring_occurrences(request: Request):
     except (ValueError, KeyError) as e:
         return {"occurrences": [], "error": str(e)}
 
-    # Create a temporary rule-like object for calculation
     class TempRule:
         pass
 
@@ -714,7 +697,6 @@ async def preview_recurring_occurrences(request: Request):
     rule.month_day_policy = month_day_policy
     rule.skip_weekends = skip_weekends
 
-    # Calculate next 4 occurrences
     occurrences = [start_date.isoformat()]
     current_date = start_date
 
@@ -811,7 +793,6 @@ def component_donut(request: Request, db: Session = Depends(get_db)):
     if not has_any_transactions:
         return render(request, "components/donut.html", {"has_any_transactions": False})
 
-    # Determine what to show based on type filter
     if filters.type == TransactionType.expense:
         expense_data = service.category_breakdown(period, TransactionType.expense)
         return render(
@@ -834,7 +815,7 @@ def component_donut(request: Request, db: Session = Depends(get_db)):
                 "income_breakdown": income_data,
             },
         )
-    else:  # All types - show both donuts
+    else:
         expense_data = service.category_breakdown(period, TransactionType.expense)
         income_data = service.category_breakdown(period, TransactionType.income)
         return render(
@@ -1615,7 +1596,7 @@ async def edit_transaction_submit(
 @app.get("/budgets", response_class=HTMLResponse)
 def budgets_page(request: Request, db: Session = Depends(get_db)):
     today = date.today()
-    ym = request.query_params.get("month")  # YYYY-MM
+    ym = request.query_params.get("month")
     if ym:
         year_str, month_str = ym.split("-", 1)
         year = int(year_str)

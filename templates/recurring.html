@@ -393,7 +393,6 @@
         const modalTitle = document.getElementById("rule-modal-title");
         const modalSubmit = document.getElementById("rule-modal-submit");
 
-        // Form elements for preview
         const startDateInput = document.getElementById("rule-start-date");
         const intervalCountInput = document.getElementById("rule-interval-count");
         const intervalUnitSelect = document.getElementById("rule-interval-unit");
@@ -406,19 +405,16 @@
         const categorySelect = document.getElementById("rule-category-select");
         const currencySelect = ruleForm.elements["currency_code"];
 
-        // Store all category options for filtering
         const allCategoryOptions = Array.from(categorySelect.options).map(opt => ({
             value: opt.value,
             text: opt.textContent,
             type: opt.dataset.type
         }));
 
-        // Filter categories based on selected type
         function filterCategories() {
             const selectedType = typeSelect.value;
             const currentCategoryValue = categorySelect.value;
 
-            // Clear and repopulate the select
             categorySelect.innerHTML = '';
 
             let hasMatchingCategory = false;
@@ -436,21 +432,17 @@
                 }
             });
 
-            // If no matching category was selected, select the first available
             if (!hasMatchingCategory && categorySelect.options.length > 0) {
                 categorySelect.options[0].selected = true;
             }
         }
 
-        // Filter categories on type change
         typeSelect.addEventListener("change", filterCategories);
 
-        // Initial filter on page load
         filterCategories();
 
         let previewDebounceTimer = null;
 
-        // Update preview when form changes
         function updatePreview() {
             const startDate = startDateInput.value;
             if (!startDate) {
@@ -495,7 +487,6 @@
             previewDebounceTimer = setTimeout(updatePreview, 300);
         }
 
-        // Show/hide month-day policy based on start date and interval
         function updateMonthDayPolicyVisibility() {
             const startDate = startDateInput.value;
             const intervalUnit = intervalUnitSelect.value;
@@ -510,14 +501,12 @@
 
             if (showPolicy) {
                 monthDayPolicySection.classList.remove("hidden");
-                // Auto-open advanced options if policy is relevant
                 document.getElementById("advanced-options").open = true;
             } else {
                 monthDayPolicySection.classList.add("hidden");
             }
         }
 
-        // Attach event listeners
         startDateInput.addEventListener("change", () => {
             updateMonthDayPolicyVisibility();
             debouncedPreview();
@@ -544,7 +533,6 @@
                 ruleForm.action = `/recurring/${data.id}`;
                 ruleForm.elements["name"].value = data.name || "";
                 ruleForm.elements["type"].value = data.type;
-                // Filter categories AFTER setting type, BEFORE setting category
                 filterCategories();
                 if (currencySelect) currencySelect.value = data.currency || "EUR";
                 ruleForm.elements["amount"].value = data.amount;
@@ -556,14 +544,11 @@
                 ruleForm.elements["month_day_policy"].value = data.policy;
                 ruleForm.elements["auto_post"].checked = data.auto === "true";
                 ruleForm.elements["skip_weekends"].checked = data.weekends === "true";
-                // Preserve next_occurrence for edits
                 nextOccurrenceHidden.value = data.next || "";
 
-                // Update visibility and preview after setting values
                 updateMonthDayPolicyVisibility();
                 updatePreview();
             } else {
-                // For create mode, filter categories based on default type
                 filterCategories();
             }
 
@@ -596,10 +581,8 @@
             });
         });
 
-        // Row expansion for details
         document.querySelectorAll("[data-recurring-row]").forEach((row) => {
             row.addEventListener("click", (e) => {
-                // Don't expand if clicking on a button or link
                 if (e.target.closest("button, a, form")) return;
 
                 const ruleId = row.dataset.recurringRow;

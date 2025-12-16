@@ -67,7 +67,6 @@
         return payload.detail;
       }
     } catch (_) {
-      // ignore
     }
     if (text.trim()) return text;
     return `Request failed (${xhr.status})`;
@@ -136,9 +135,7 @@
     syncNavPeriodLinks,
   };
 
-  // Function to reserve space for scrollbar to prevent layout shift
   function reserveScrollbarSpace() {
-    // Create a temporary element to measure scrollbar width
     const outer = document.createElement('div');
     outer.style.overflow = 'scroll';
     outer.style.visibility = 'hidden';
@@ -156,13 +153,10 @@
 
     const scrollbarWidth = outer.offsetWidth - inner.offsetWidth;
 
-    // Clean up
     document.body.removeChild(outer);
 
-    // Set CSS custom property for scrollbar width
     document.documentElement.style.setProperty('--scrollbar-width', `${scrollbarWidth}px`);
 
-    // If scrollbar exists, reserve space for it
     if (scrollbarWidth > 0) {
       document.body.style.paddingRight = `${scrollbarWidth}px`;
     }
@@ -172,6 +166,7 @@
     applyTheme(getPreferredTheme());
     syncNavPeriodLinks();
     reserveScrollbarSpace();
+    checkFilterChipOverflow();
 
     document.addEventListener("click", (event) => {
       const themeToggle = event.target.closest("[data-theme-toggle]");
@@ -364,23 +359,14 @@
     });
   });
 
-  // Check for filter chip overflow and add indicator class
   function checkFilterChipOverflow() {
     document.querySelectorAll('.transactions-filter-chips').forEach(chips => {
-      // Skip dashboard filter chips (they wrap)
       if (chips.closest('#dashboard-filter-card')) return;
 
       const hasOverflow = chips.scrollWidth > chips.clientWidth;
       chips.classList.toggle('has-overflow', hasOverflow);
     });
   }
-
-
-
-  // Run on load and after HTMX swaps
-  document.addEventListener("DOMContentLoaded", () => {
-    checkFilterChipOverflow();
-  });
 
   window.addEventListener('resize', () => {
     checkFilterChipOverflow();

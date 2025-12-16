@@ -143,10 +143,7 @@
 
 
     <script>
-        // Initialize Lucide icons
         lucide.createIcons();
-
-        // Re-initialize Lucide icons after htmx swaps
         document.addEventListener('htmx:afterSwap', function () {
             lucide.createIcons();
         });

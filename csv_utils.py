@@ -11,26 +11,18 @@ from schemas import CSVRow
 
 def sanitize_csv_value(value: str) -> str:
     """
-    Sanitize CSV values to prevent formula injection.
-
-    This prevents Excel/Google Sheets from executing malicious formulas
-    by either:
-    1. Prefixing with tab (safer, maintains formatting)
-    2. Escaping with single quote (alternative approach)
+    Sanitize CSV values to prevent formula injection by prefixing dangerous patterns with tab.
     """
     if not value or value.strip() == "":
         return ""
 
-    value = str(value).strip()
+    value = value.strip()
 
-    # Check if value starts with formula triggers
     formula_triggers = ("=", "+", "-", "@", "\t", "\r")
 
     if value.startswith(formula_triggers):
-        # Prefix with tab to prevent formula execution
         return "\t" + value
 
-    # Also escape if it looks like it could be a command
     dangerous_patterns = [
         r"^cmd\s*",
         r"^powershell\s*",
@@ -82,12 +74,8 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
             type_value = TransactionType(type_raw)
             amount_value = parse_amount(raw.get("Amount") or "0")
             category = (raw.get("Category") or "").strip()
-            note_raw = raw.get("Note")
-            note = (
-                note_raw.strip()
-                if isinstance(note_raw, str) and note_raw.strip()
-                else None
-            )
+            note_raw = raw.get("Note") or ""
+            note = note_raw.strip() if note_raw.strip() else None
             rows.append(
                 CSVRow(
                     date=date_value,

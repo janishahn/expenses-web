@@ -38,7 +38,6 @@ def update_monthly_rollup(
     amount_cents: int,
     increment: bool = True,
 ) -> None:
-    """Update or create a monthly rollup for the given transaction."""
     year = txn_date.year
     month = txn_date.month
     sign = 1 if increment else -1
@@ -60,7 +59,7 @@ def update_monthly_rollup(
             expense_cents=0,
         )
         session.add(rollup)
-        session.flush()  # Flush immediately to prevent duplicate inserts for same month
+        session.flush()
 
     if txn_type == TransactionType.income:
         rollup.income_cents = max(0, rollup.income_cents + sign * amount_cents)
@@ -108,9 +107,9 @@ def rebuild_monthly_rollups(session: Session, user_id: int) -> None:
             )
             rollups[key] = rollup
         if row.type == TransactionType.income:
-            rollup.income_cents = int(row.total or 0)
+            rollup.income_cents = int(row.total)
         else:
-            rollup.expense_cents = int(row.total or 0)
+            rollup.expense_cents = int(row.total)
 
     session.add_all(rollups.values())
     session.commit()
@@ -218,7 +217,6 @@ class TransactionService:
             data.amount_cents,
             increment=True,
         )
-        # Invalidate donut cache for the transaction period
         period = Period("transaction", data.date, data.date)
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(period)
@@ -365,7 +363,6 @@ class TransactionService:
             txn.amount_cents,
             increment=False,
         )
-        # Invalidate donut cache for the transaction period
         period = Period("transaction", txn.date, txn.date)
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(period)
@@ -502,8 +499,8 @@ class BalanceAnchorService:
             Transaction.occurred_at <= target,
         )
         row = self.session.execute(stmt).one()
-        income = int(row.income or 0)
-        expenses = int(row.expenses or 0)
+        income = int(row.income)
+        expenses = int(row.expenses)
         return baseline + income - expenses
 
 
@@ -514,17 +511,13 @@ class MetricsService:
         self._category_breakdown_cache: dict[str, list[dict[str, object]]] = {}
 
     def _invalidate_period_cache(self, period: Period) -> None:
-        """Invalidate cache entries for a given period."""
-        # Invalidate all type-specific cache keys for this period
         period_base = f"{period.start.isoformat()}_{period.end.isoformat()}"
 
-        # Remove specific type cache keys
         for type_suffix in ["expense", "income"]:
             period_key = f"{period_base}_{type_suffix}"
             if period_key in self._category_breakdown_cache:
                 del self._category_breakdown_cache[period_key]
 
-        # Also remove old-style cache key for backward compatibility
         old_key = period_base
         if old_key in self._category_breakdown_cache:
             del self._category_breakdown_cache[old_key]
@@ -579,7 +572,7 @@ class MetricsService:
                 Transaction.date.between(start, end),
             )
             row = self.session.execute(stmt).one()
-            return int(row.income or 0), int(row.expenses or 0)
+            return int(row.income), int(row.expenses)
 
         balance_at_end = BalanceAnchorService(self.session, self.user_id).balance_as_of(
             datetime.combine(period.end, time.max)
@@ -645,8 +638,8 @@ class MetricsService:
                 ),
             )
             row = self.session.execute(stmt).one()
-            full_income = int(row.income or 0)
-            full_expenses = int(row.expenses or 0)
+            full_income = int(row.income)
+            full_expenses = int(row.expenses)
 
         income = start_income + full_income + end_income
         expenses = start_expenses + full_expenses + end_expenses
@@ -706,7 +699,7 @@ class MetricsService:
                 Transaction.date.between(start, end),
             )
             row = self.session.execute(stmt).one()
-            return int(row.income or 0), int(row.expenses or 0)
+            return int(row.income), int(row.expenses)
 
         def build_points(values: list[int]) -> str:
             if not values:
@@ -789,7 +782,6 @@ class MetricsService:
         *,
         category_ids: Optional[list[int]] = None,
     ) -> list[dict[str, object]]:
-        # For backward compatibility, default to expense if no type specified
         if transaction_type is None:
             transaction_type = TransactionType.expense
 
@@ -851,7 +843,6 @@ class RecurringRuleService:
         return self.session.scalars(stmt).all()
 
     def get_statistics(self) -> dict[str, object]:
-        """Calculate statistics for recurring rules, normalized to monthly amounts."""
         from fx_rates import FxRateService
         from models import IntervalUnit
         from recurrence import local_today
@@ -861,7 +852,6 @@ class RecurringRuleService:
         today = local_today()
 
         def monthly_amount(rule: RecurringRule) -> int:
-            """Convert a rule's amount to monthly equivalent in cents."""
             interval = rule.interval_unit
             count = rule.interval_count
             amount = rule.amount_cents
@@ -872,10 +862,8 @@ class RecurringRuleService:
                     amount = 0
 
             if interval == IntervalUnit.day:
-                # Approximate 30.44 days per month
                 return int(amount * 30.44 / count)
             elif interval == IntervalUnit.week:
-                # ~4.35 weeks per month
                 return int(amount * 4.35 / count)
             elif interval == IntervalUnit.month:
                 return int(amount / count)
@@ -907,12 +895,10 @@ class RecurringRuleService:
                     expense_by_category.get(category_name, 0) + monthly
                 )
 
-        # Calculate coverage ratio (what % of expenses are covered by income)
         coverage_ratio = (
             (total_income / total_expenses * 100) if total_expenses > 0 else 100.0
         )
 
-        # Build category breakdowns with percentages
         def build_breakdown(by_category: dict[str, int], total: int) -> list[dict]:
             if total == 0:
                 return []
@@ -1062,7 +1048,6 @@ class CSVService:
                 increment=True,
             )
             dates.add(row["date"])
-        # Invalidate donut cache for all affected periods
         metrics = MetricsService(self.session, self.user_id)
         for txn_date in dates:
             period = Period("transaction", txn_date, txn_date)
@@ -1130,8 +1115,8 @@ class ReportService:
                 if options.category_ids:
                     stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
                 row = self.session.execute(stmt).one()
-                income = int(row.income or 0)
-                expenses = int(row.expenses or 0)
+                income = int(row.income)
+                expenses = int(row.expenses)
                 kpis = {
                     "income": income,
                     "expenses": expenses,
@@ -1283,8 +1268,8 @@ class ReportService:
                         )
 
                     opening_row = self.session.execute(opening_stmt).one()
-                    opening_income = int(opening_row.income or 0)
-                    opening_expenses = int(opening_row.expenses or 0)
+                    opening_income = int(opening_row.income)
+                    opening_expenses = int(opening_row.expenses)
                     opening_balance = opening_income - opening_expenses
                 data["opening_balance_cents"] = opening_balance
 
@@ -1308,7 +1293,7 @@ class ReportService:
                 for txn in transactions:
                     name = txn.category.name if txn.category else "Uncategorized"
                     key = (name, txn.type)
-                    totals[key] = totals.get(key, 0) + int(txn.amount_cents or 0)
+                    totals[key] = totals.get(key, 0) + txn.amount_cents
                 subtotals = [
                     {
                         "name": name,
@@ -1410,7 +1395,7 @@ class BudgetService:
             .group_by(Transaction.category_id)
         )
         spent_by_category = {
-            row.category_id: int(row.spent or 0) for row in self.session.execute(stmt)
+            row.category_id: int(row.spent) for row in self.session.execute(stmt)
         }
         total_spent = sum(spent_by_category.values())
 

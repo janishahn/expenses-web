@@ -6,7 +6,6 @@ function DateRangePicker({ initialStart, initialEnd, onApply, onExpose }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
-  // Format ISO date (YYYY-MM-DD) to European format (DD.MM.YYYY)
   const formatEuroDate = (isoDate) => {
     if (!isoDate) return "";
     const parts = isoDate.split("-");

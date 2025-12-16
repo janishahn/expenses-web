@@ -63,7 +63,7 @@ def _connect_readonly(path: Path) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     try:
         con.execute("PRAGMA query_only=ON;")
-    except Exception:
+    except sqlite3.OperationalError:
         pass
     return con
 
