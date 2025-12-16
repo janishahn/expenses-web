@@ -4,7 +4,8 @@
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
             <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Trash</p>
-            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Deleted Transactions</h1>
+            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Deleted Transactions
+            </h1>
             <p class="text-slate-500 dark:text-slate-400">Restore entries before they get purged.</p>
         </div>
         <a href="/transactions" class="btn btn-secondary btn-sm">Back to transactions</a>
@@ -28,11 +29,14 @@
                     {% for txn in transactions %}
                     {% set is_expense = txn.type.value == 'expense' %}
                     <tr>
-                        <td class="text-xs text-slate-500">{{ txn.deleted_at.strftime('%Y-%m-%d %H:%M') if txn.deleted_at else '-' }}</td>
-                        <td>{{ txn.date }}</td>
-                        <td class="font-medium text-slate-800 dark:text-slate-100">{{ txn.note or "Untitled entry" }}</td>
+                        <td class="text-xs text-slate-500">{{ txn.deleted_at|eurodatetime if txn.deleted_at else '-' }}
+                        </td>
+                        <td>{{ txn.date|eurodate }}</td>
+                        <td class="font-medium text-slate-800 dark:text-slate-100">{{ txn.note or "Untitled entry" }}
+                        </td>
                         <td>{{ txn.category.name if txn.category else "Uncategorized" }}</td>
-                        <td class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                        <td
+                            class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
                             {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
                         </td>
                         <td class="text-right">
@@ -56,4 +60,3 @@
     {% endif %}
 </section>
 {% endblock %}
-

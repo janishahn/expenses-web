@@ -12,90 +12,243 @@
         </div>
     </div>
 
-    {% if rules %}
-    <div class="grid grid-cols-1 gap-4">
-        {% for rule in rules %}
-        <article class="card shadow-hover">
-            <div class="card-body flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <p class="metric-eyebrow">{{ rule.category.name if rule.category else "Uncategorized" }}</p>
-                    <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100">{{ rule.amount_cents|currency }} €</h2>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">
-                        Every {{ rule.interval_count }} {{ rule.interval_unit.value }}{% if rule.interval_count > 1 %}s{% endif %} • Next: {{ rule.next_occurrence }}
-                    </p>
-                    {% if rule.name %}
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ rule.name }}</p>
-                    {% endif %}
+    {% if stats.rule_counts.total > 0 %}
+    <!-- Statistics Section -->
+    <div class="recurring-stats-grid">
+        <article class="card recurring-stat-card" data-elevation="1">
+            <div class="card-body recurring-stat-body">
+                <div class="recurring-stat-title-row">
+                    <span class="kpi-icon kpi-icon--income" aria-hidden="true">{{ icon("arrow-down-left", size=16,
+                        class="icon") }}</span>
+                    <div class="metric-eyebrow">Monthly Income</div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <form hx-post="/recurring/{{ rule.id }}/toggle" hx-swap="none" class="flex items-center gap-2">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="auto_post" value="{{ 'false' if rule.auto_post else 'true' }}">
-                        <span class="text-xs text-slate-500">Auto</span>
-                        <button type="submit" class="btn btn-secondary btn-sm">
-                            {{ "On" if rule.auto_post else "Off" }}
-                        </button>
-                    </form>
-                    <a href="/recurring/{{ rule.id }}/occurrences" class="btn btn-ghost btn-icon" data-tooltip="Upcoming occurrences">
-                        {{ icon("calendar", class="icon") }}
-                    </a>
-                    <button type="button"
-                            class="btn btn-ghost btn-icon"
-                            data-rule-edit
-                            data-rule-id="{{ rule.id }}"
-                            data-rule-name="{{ rule.name or '' }}"
-                            data-rule-type="{{ rule.type.value }}"
-                            data-rule-amount="{{ '%.2f' % (rule.amount_cents / 100) }}"
-                            data-rule-category="{{ rule.category_id }}"
-                            data-rule-start="{{ rule.anchor_date }}"
-                            data-rule-interval-unit="{{ rule.interval_unit.value }}"
-                            data-rule-interval-count="{{ rule.interval_count }}"
-                            data-rule-next="{{ rule.next_occurrence }}"
-                            data-rule-end="{{ rule.end_date or '' }}"
-                            data-rule-policy="{{ rule.month_day_policy.value }}"
-                            data-rule-auto="{{ 'true' if rule.auto_post else 'false' }}"
-                            data-rule-weekends="{{ 'true' if rule.skip_weekends else 'false' }}">
-                        {{ icon("pencil", class="icon") }}
-                    </button>
-                    <form method="post" action="/recurring/{{ rule.id }}/delete" class="inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete rule">
-                            {{ icon("trash-2", class="icon") }}
-                        </button>
-                    </form>
-                </div>
-            </div>
-            <div class="card-footer flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <span class="pill">{{ rule.type.value|title }}</span>
-                <span class="pill">{{ "Automatic" if rule.auto_post else "Manual" }}</span>
-                {% if rule.skip_weekends %}
-                <span class="pill">Skips weekends</span>
-                {% endif %}
-                {% if rule.end_date %}
-                <span class="pill">Ends {{ rule.end_date }}</span>
-                {% endif %}
+                <p class="metric-value tabular text-emerald-500">{{ stats.total_monthly_income|currency }} €</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ stats.rule_counts.income }} recurring rule{% if
+                    stats.rule_counts.income != 1 %}s{% endif %}</p>
             </div>
         </article>
-        {% endfor %}
+
+        <article class="card recurring-stat-card" data-elevation="1">
+            <div class="card-body recurring-stat-body">
+                <div class="recurring-stat-title-row">
+                    <span class="kpi-icon kpi-icon--expenses" aria-hidden="true">{{ icon("arrow-up-right", size=16,
+                        class="icon") }}</span>
+                    <div class="metric-eyebrow">Monthly Expenses</div>
+                </div>
+                <p class="metric-value tabular text-rose-500">{{ stats.total_monthly_expenses|currency }} €</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ stats.rule_counts.expense }} recurring rule{%
+                    if stats.rule_counts.expense != 1 %}s{% endif %}</p>
+            </div>
+        </article>
+
+        <article class="card recurring-stat-card" data-elevation="1">
+            <div class="card-body recurring-stat-body">
+                <div class="recurring-stat-title-row">
+                    <span
+                        class="kpi-icon {% if stats.coverage_ratio >= 100 %}kpi-icon--balance{% else %}kpi-icon--balance-negative{% endif %}"
+                        aria-hidden="true">{{ icon("percent", size=16, class="icon") }}</span>
+                    <div class="metric-eyebrow">Coverage Ratio</div>
+                </div>
+                <p
+                    class="metric-value tabular {% if stats.coverage_ratio >= 100 %}text-emerald-500{% else %}text-rose-500{% endif %}">
+                    {{ "%.0f"|format(stats.coverage_ratio) }}%</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">
+                    {% if stats.coverage_ratio >= 100 %}
+                    Expenses covered by income
+                    {% else %}
+                    {{ "%.0f"|format(100 - stats.coverage_ratio) }}% gap in coverage
+                    {% endif %}
+                </p>
+            </div>
+        </article>
+    </div>
+
+    <!-- Category Breakdown Section -->
+    {% if stats.expense_breakdown or stats.income_breakdown %}
+    <div class="recurring-breakdown-grid">
+        {% if stats.expense_breakdown %}
+        <div class="card shadow-hover">
+            <div class="card-body">
+                <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">Expense Categories</h3>
+                <div class="recurring-breakdown-list">
+                    {% for item in stats.expense_breakdown %}
+                    <div class="recurring-breakdown-item">
+                        <div class="recurring-breakdown-bar-wrapper">
+                            <div class="recurring-breakdown-bar recurring-breakdown-bar--expense"
+                                style="width: {{ item.percent }}%"></div>
+                        </div>
+                        <div class="recurring-breakdown-info">
+                            <span class="recurring-breakdown-name">{{ item.name }}</span>
+                            <span class="recurring-breakdown-amount tabular">{{ item.amount_cents|currency }} €</span>
+                        </div>
+                        <span class="recurring-breakdown-percent tabular">{{ "%.1f"|format(item.percent) }}%</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if stats.income_breakdown %}
+        <div class="card shadow-hover">
+            <div class="card-body">
+                <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-4">Income Categories</h3>
+                <div class="recurring-breakdown-list">
+                    {% for item in stats.income_breakdown %}
+                    <div class="recurring-breakdown-item">
+                        <div class="recurring-breakdown-bar-wrapper">
+                            <div class="recurring-breakdown-bar recurring-breakdown-bar--income"
+                                style="width: {{ item.percent }}%"></div>
+                        </div>
+                        <div class="recurring-breakdown-info">
+                            <span class="recurring-breakdown-name">{{ item.name }}</span>
+                            <span class="recurring-breakdown-amount tabular">{{ item.amount_cents|currency }} €</span>
+                        </div>
+                        <span class="recurring-breakdown-percent tabular">{{ "%.1f"|format(item.percent) }}%</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if rules %}
+    <!-- Compact Rules Table -->
+    <div class="card shadow-hover recurring-table-card">
+        <div class="recurring-table-wrapper">
+            <table class="recurring-table">
+                <thead>
+                    <tr>
+                        <th class="recurring-th-name">Name / Category</th>
+                        <th class="recurring-th-amount">Amount</th>
+                        <th class="recurring-th-interval">Interval</th>
+                        <th class="recurring-th-next">Next</th>
+                        <th class="recurring-th-actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in rules %}
+                    <tr class="recurring-row {% if rule.type.value == 'income' %}recurring-row--income{% else %}recurring-row--expense{% endif %}"
+                        data-recurring-row="{{ rule.id }}" tabindex="0" role="button" aria-expanded="false">
+                        <td class="recurring-td-name">
+                            <div class="recurring-name-cell">
+                                <span class="recurring-type-indicator" aria-label="{{ rule.type.value }}"></span>
+                                <div class="recurring-name-content">
+                                    <span class="recurring-rule-name">{{ rule.name if rule.name else rule.category.name
+                                        if rule.category else "Uncategorized" }}</span>
+                                    {% if rule.name %}
+                                    <span class="recurring-rule-category">{{ rule.category.name if rule.category else
+                                        "Uncategorized" }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="recurring-td-amount">
+                            <span
+                                class="recurring-amount tabular {% if rule.type.value == 'income' %}text-emerald-500{% else %}text-rose-500{% endif %}">
+                                {% if rule.type.value == 'income' %}+{% else %}-{% endif %}{{ rule.amount_cents|currency
+                                }} €
+                            </span>
+                        </td>
+                        <td class="recurring-td-interval">
+                            <span class="recurring-interval">
+                                Every {{ rule.interval_count }} {{ rule.interval_unit.value }}{% if rule.interval_count
+                                > 1 %}s{% endif %}
+                            </span>
+                        </td>
+                        <td class="recurring-td-next">
+                            <span class="recurring-next-date">{{ rule.next_occurrence|eurodate }}</span>
+                        </td>
+                        <td class="recurring-td-actions">
+                            <div class="recurring-actions">
+                                <form hx-post="/recurring/{{ rule.id }}/toggle" hx-swap="none" class="inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="auto_post"
+                                        value="{{ 'false' if rule.auto_post else 'true' }}">
+                                    <button type="submit"
+                                        class="btn btn-ghost btn-sm recurring-auto-btn {% if rule.auto_post %}recurring-auto-btn--on{% endif %}"
+                                        data-tooltip="{% if rule.auto_post %}Auto-post on{% else %}Auto-post off{% endif %}">
+                                        {{ "Auto" if rule.auto_post else "Manual" }}
+                                    </button>
+                                </form>
+                                <a href="/recurring/{{ rule.id }}/occurrences" class="btn btn-ghost btn-icon btn-sm"
+                                    data-tooltip="View history">
+                                    {{ icon("calendar", class="icon") }}
+                                </a>
+                                <button type="button" class="btn btn-ghost btn-icon btn-sm" data-rule-edit
+                                    data-rule-id="{{ rule.id }}" data-rule-name="{{ rule.name or '' }}"
+                                    data-rule-type="{{ rule.type.value }}"
+                                    data-rule-amount="{{ '%.2f' % (rule.amount_cents / 100) }}"
+                                    data-rule-category="{{ rule.category_id }}" data-rule-start="{{ rule.anchor_date }}"
+                                    data-rule-interval-unit="{{ rule.interval_unit.value }}"
+                                    data-rule-interval-count="{{ rule.interval_count }}"
+                                    data-rule-next="{{ rule.next_occurrence }}"
+                                    data-rule-end="{{ rule.end_date or '' }}"
+                                    data-rule-policy="{{ rule.month_day_policy.value }}"
+                                    data-rule-auto="{{ 'true' if rule.auto_post else 'false' }}"
+                                    data-rule-weekends="{{ 'true' if rule.skip_weekends else 'false' }}"
+                                    data-tooltip="Edit rule">
+                                    {{ icon("pencil", class="icon") }}
+                                </button>
+                                <form method="post" action="/recurring/{{ rule.id }}/delete" class="inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                                        data-tooltip="Delete rule">
+                                        {{ icon("trash-2", class="icon") }}
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Expandable details row -->
+                    <tr class="recurring-details-row" data-recurring-details="{{ rule.id }}" aria-hidden="true">
+                        <td colspan="5">
+                            <div class="recurring-details-content">
+                                <div class="recurring-details-pills">
+                                    <span class="pill">{{ rule.type.value|title }}</span>
+                                    <span class="pill">{{ "Automatic" if rule.auto_post else "Manual" }}</span>
+                                    {% if rule.skip_weekends %}
+                                    <span class="pill">Skips weekends</span>
+                                    {% endif %}
+                                    {% if rule.end_date %}
+                                    <span class="pill">Ends {{ rule.end_date|eurodate }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="recurring-details-meta">
+                                    <span class="text-xs text-slate-500 dark:text-slate-400">Started {{
+                                        rule.anchor_date|eurodate }}</span>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
     {% else %}
     <div class="card shadow-hover text-center p-10 space-y-3">
         {{ icon("repeat", class="mx-auto icon") }}
         <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100">No rules yet</h2>
-        <p class="text-slate-500 dark:text-slate-400">Set up your first recurring transaction to automate predictable cashflow.</p>
+        <p class="text-slate-500 dark:text-slate-400">Set up your first recurring transaction to automate predictable
+            cashflow.</p>
         <button type="button" class="btn btn-primary" data-open-rule-modal>Create a rule</button>
     </div>
     {% endif %}
 
-    <div class="ghost-card filter-bar flex-col sm:flex-row gap-4 text-xs text-slate-500 dark:text-slate-400">
+    <div
+        class="ghost-card filter-bar recurring-footer-info flex-col sm:flex-row text-xs text-slate-500 dark:text-slate-400">
         <div class="flex items-center gap-2">
             <span class="pill">Post on last day</span>
-            Moves the occurrence to the end of the month when the day doesn't exist.
+            <span>Moves the occurrence to the end of the month when the day doesn't exist.</span>
         </div>
         <div class="filter-divider hidden sm:block"></div>
         <div class="flex items-center gap-2">
             <span class="pill">Skip that month</span>
-            Skips months that don't have enough days (e.g., Feb 30).
+            <span>Skips months that don't have enough days (e.g., Feb 30).</span>
         </div>
     </div>
 </section>
@@ -104,17 +257,19 @@
     <form id="rule-form" method="post" action="/recurring" data-create-action="/recurring" class="modal-form space-y-4">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="next_occurrence" id="rule-next-occurrence" value="">
-        
+
         <div class="flex items-center justify-between">
             <div>
                 <p class="metric-eyebrow">Editor</p>
-                <h3 class="text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100" id="rule-modal-title">Add recurring rule</h3>
+                <h3 class="text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100"
+                    id="rule-modal-title">Add recurring rule</h3>
             </div>
-            <button type="button" class="btn btn-ghost btn-icon" onclick="document.getElementById('rule-modal').close()" aria-label="Close">
+            <button type="button" class="btn btn-ghost btn-icon" onclick="document.getElementById('rule-modal').close()"
+                aria-label="Close">
                 {{ icon("x", class="icon") }}
             </button>
         </div>
-        
+
         <!-- Basic Fields -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
@@ -135,14 +290,14 @@
             </label>
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 Category
-                <select name="category_id" class="select">
+                <select name="category_id" id="rule-category-select" class="select">
                     {% for category in categories %}
-                    <option value="{{ category.id }}">{{ category.name }} ({{ category.type.value|title }})</option>
+                    <option value="{{ category.id }}" data-type="{{ category.type.value }}">{{ category.name }}</option>
                     {% endfor %}
                 </select>
             </label>
         </div>
-        
+
         <!-- Schedule Section -->
         <div class="border-t border-slate-200 dark:border-slate-700 pt-4">
             <p class="text-sm font-semibold text-slate-600 dark:text-slate-300 mb-3">Schedule</p>
@@ -155,7 +310,8 @@
                     <span>Repeats</span>
                     <div class="flex items-center gap-2">
                         <span class="text-slate-400 font-normal">Every</span>
-                        <input type="number" name="interval_count" id="rule-interval-count" min="1" value="1" class="input w-20" style="width: 5rem;">
+                        <input type="number" name="interval_count" id="rule-interval-count" min="1" value="1"
+                            class="input w-20" style="width: 5rem;">
                         <select name="interval_unit" id="rule-interval-unit" class="select flex-1">
                             {% for unit in IntervalUnit %}
                             <option value="{{ unit.value }}">{{ unit.value }}(s)</option>
@@ -169,18 +325,20 @@
                 </label>
             </div>
         </div>
-        
+
         <!-- Live Preview -->
-        <div id="occurrence-preview" class="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+        <div id="occurrence-preview"
+            class="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
             <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Upcoming occurrences</p>
             <div id="preview-dates" class="flex flex-wrap gap-2 text-sm text-slate-700 dark:text-slate-300">
                 <span class="text-slate-400 italic">Enter a start date to see preview</span>
             </div>
         </div>
-        
+
         <!-- Advanced Options -->
         <details class="border-t border-slate-200 dark:border-slate-700 pt-3" id="advanced-options">
-            <summary class="text-sm font-semibold text-slate-600 dark:text-slate-300 cursor-pointer hover:text-slate-800 dark:hover:text-slate-100">
+            <summary
+                class="text-sm font-semibold text-slate-600 dark:text-slate-300 cursor-pointer hover:text-slate-800 dark:hover:text-slate-100">
                 Advanced options
             </summary>
             <div class="mt-3 space-y-3">
@@ -202,177 +360,252 @@
                             <option value="skip">Skip that month</option>
                             <option value="carry_forward">Use previous month's actual day</option>
                         </select>
-                        <p class="text-xs font-normal text-slate-400 mt-1">For example, if you set the 31st and February only has 28 days.</p>
+                        <p class="text-xs font-normal text-slate-400 mt-1">For example, if you set the 31st and February
+                            only has 28 days.</p>
                     </label>
                 </div>
             </div>
         </details>
-        
+
         <div class="flex justify-end gap-3 pt-2">
-            <button type="button" class="btn btn-ghost" onclick="document.getElementById('rule-modal').close()">Cancel</button>
+            <button type="button" class="btn btn-ghost"
+                onclick="document.getElementById('rule-modal').close()">Cancel</button>
             <button type="submit" class="btn btn-primary btn-lg" id="rule-modal-submit">Save rule</button>
         </div>
     </form>
 </dialog>
 
 <script>
-(function () {
-const ruleModal = document.getElementById("rule-modal");
-const ruleForm = document.getElementById("rule-form");
-if (!ruleModal || !ruleForm) return;
+    (function () {
+        const ruleModal = document.getElementById("rule-modal");
+        const ruleForm = document.getElementById("rule-form");
+        if (!ruleModal || !ruleForm) return;
 
-const defaultAction = ruleForm.getAttribute("data-create-action");
-const modalTitle = document.getElementById("rule-modal-title");
-const modalSubmit = document.getElementById("rule-modal-submit");
+        const defaultAction = ruleForm.getAttribute("data-create-action");
+        const modalTitle = document.getElementById("rule-modal-title");
+        const modalSubmit = document.getElementById("rule-modal-submit");
 
-// Form elements for preview
-const startDateInput = document.getElementById("rule-start-date");
-const intervalCountInput = document.getElementById("rule-interval-count");
-const intervalUnitSelect = document.getElementById("rule-interval-unit");
-const monthDayPolicySelect = document.getElementById("rule-month-day-policy");
-const skipWeekendsCheckbox = ruleForm.elements["skip_weekends"];
-const previewDates = document.getElementById("preview-dates");
-const monthDayPolicySection = document.getElementById("month-day-policy-section");
-const nextOccurrenceHidden = document.getElementById("rule-next-occurrence");
+        // Form elements for preview
+        const startDateInput = document.getElementById("rule-start-date");
+        const intervalCountInput = document.getElementById("rule-interval-count");
+        const intervalUnitSelect = document.getElementById("rule-interval-unit");
+        const monthDayPolicySelect = document.getElementById("rule-month-day-policy");
+        const skipWeekendsCheckbox = ruleForm.elements["skip_weekends"];
+        const previewDates = document.getElementById("preview-dates");
+        const monthDayPolicySection = document.getElementById("month-day-policy-section");
+        const nextOccurrenceHidden = document.getElementById("rule-next-occurrence");
+        const typeSelect = ruleForm.elements["type"];
+        const categorySelect = document.getElementById("rule-category-select");
 
-let previewDebounceTimer = null;
+        // Store all category options for filtering
+        const allCategoryOptions = Array.from(categorySelect.options).map(opt => ({
+            value: opt.value,
+            text: opt.textContent,
+            type: opt.dataset.type
+        }));
 
-// Update preview when form changes
-function updatePreview() {
-    const startDate = startDateInput.value;
-    if (!startDate) {
-        previewDates.innerHTML = '<span class="text-slate-400 italic">Enter a start date to see preview</span>';
-        return;
-    }
+        // Filter categories based on selected type
+        function filterCategories() {
+            const selectedType = typeSelect.value;
+            const currentCategoryValue = categorySelect.value;
 
-    const data = {
-        start_date: startDate,
-        interval_unit: intervalUnitSelect.value,
-        interval_count: parseInt(intervalCountInput.value) || 1,
-        month_day_policy: monthDayPolicySelect.value,
-        skip_weekends: skipWeekendsCheckbox.checked
-    };
+            // Clear and repopulate the select
+            categorySelect.innerHTML = '';
 
-    fetch("/api/recurring/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-    })
-    .then(res => res.json())
-    .then(result => {
-        if (result.occurrences && result.occurrences.length > 0) {
-            const formatted = result.occurrences.map(d => {
-                const date = new Date(d + "T00:00:00");
-                return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+            let hasMatchingCategory = false;
+            allCategoryOptions.forEach(opt => {
+                if (opt.type === selectedType) {
+                    const option = document.createElement('option');
+                    option.value = opt.value;
+                    option.textContent = opt.text;
+                    option.dataset.type = opt.type;
+                    if (opt.value === currentCategoryValue) {
+                        option.selected = true;
+                        hasMatchingCategory = true;
+                    }
+                    categorySelect.appendChild(option);
+                }
             });
-            previewDates.innerHTML = formatted.map(d => 
-                `<span class="px-2 py-1 bg-primary/10 text-primary rounded-md text-xs font-medium">${d}</span>`
-            ).join("");
-        } else {
-            previewDates.innerHTML = '<span class="text-slate-400 italic">Unable to calculate preview</span>';
+
+            // If no matching category was selected, select the first available
+            if (!hasMatchingCategory && categorySelect.options.length > 0) {
+                categorySelect.options[0].selected = true;
+            }
         }
-    })
-    .catch(() => {
-        previewDates.innerHTML = '<span class="text-slate-400 italic">Preview unavailable</span>';
-    });
-}
 
-function debouncedPreview() {
-    clearTimeout(previewDebounceTimer);
-    previewDebounceTimer = setTimeout(updatePreview, 300);
-}
+        // Filter categories on type change
+        typeSelect.addEventListener("change", filterCategories);
 
-// Show/hide month-day policy based on start date and interval
-function updateMonthDayPolicyVisibility() {
-    const startDate = startDateInput.value;
-    const intervalUnit = intervalUnitSelect.value;
-    
-    if (!startDate) {
-        monthDayPolicySection.classList.add("hidden");
-        return;
-    }
-    
-    const day = new Date(startDate + "T00:00:00").getDate();
-    const showPolicy = (intervalUnit === "month" || intervalUnit === "year") && day > 28;
-    
-    if (showPolicy) {
-        monthDayPolicySection.classList.remove("hidden");
-        // Auto-open advanced options if policy is relevant
-        document.getElementById("advanced-options").open = true;
-    } else {
-        monthDayPolicySection.classList.add("hidden");
-    }
-}
+        // Initial filter on page load
+        filterCategories();
 
-// Attach event listeners
-startDateInput.addEventListener("change", () => {
-    updateMonthDayPolicyVisibility();
-    debouncedPreview();
-});
-intervalCountInput.addEventListener("input", debouncedPreview);
-intervalUnitSelect.addEventListener("change", () => {
-    updateMonthDayPolicyVisibility();
-    debouncedPreview();
-});
-monthDayPolicySelect.addEventListener("change", debouncedPreview);
-skipWeekendsCheckbox.addEventListener("change", debouncedPreview);
+        let previewDebounceTimer = null;
 
-function openRuleModal(mode = "create", data = {}) {
-    ruleForm.reset();
-    ruleForm.action = defaultAction;
-    modalTitle.textContent = mode === "create" ? "Add recurring rule" : "Edit recurring rule";
-    modalSubmit.textContent = mode === "create" ? "Save rule" : "Update rule";
-    nextOccurrenceHidden.value = "";
-    monthDayPolicySection.classList.add("hidden");
-    previewDates.innerHTML = '<span class="text-slate-400 italic">Enter a start date to see preview</span>';
+        // Update preview when form changes
+        function updatePreview() {
+            const startDate = startDateInput.value;
+            if (!startDate) {
+                previewDates.innerHTML = '<span class="text-slate-400 italic">Enter a start date to see preview</span>';
+                return;
+            }
 
-    if (mode === "edit") {
-        ruleForm.action = `/recurring/${data.id}`;
-        ruleForm.elements["name"].value = data.name || "";
-        ruleForm.elements["type"].value = data.type;
-        ruleForm.elements["amount"].value = data.amount;
-        ruleForm.elements["category_id"].value = data.category;
-        ruleForm.elements["start_date"].value = data.start || "";
-        ruleForm.elements["interval_unit"].value = data.intervalUnit;
-        ruleForm.elements["interval_count"].value = data.intervalCount;
-        ruleForm.elements["end_date"].value = data.end || "";
-        ruleForm.elements["month_day_policy"].value = data.policy;
-        ruleForm.elements["auto_post"].checked = data.auto === "true";
-        ruleForm.elements["skip_weekends"].checked = data.weekends === "true";
-        // Preserve next_occurrence for edits
-        nextOccurrenceHidden.value = data.next || "";
-        
-        // Update visibility and preview after setting values
-        updateMonthDayPolicyVisibility();
-        updatePreview();
-    }
+            const data = {
+                start_date: startDate,
+                interval_unit: intervalUnitSelect.value,
+                interval_count: parseInt(intervalCountInput.value) || 1,
+                month_day_policy: monthDayPolicySelect.value,
+                skip_weekends: skipWeekendsCheckbox.checked
+            };
 
-    ruleModal.showModal();
-}
+            fetch("/api/recurring/preview", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            })
+                .then(res => res.json())
+                .then(result => {
+                    if (result.occurrences && result.occurrences.length > 0) {
+                        const formatted = result.occurrences.map(d => {
+                            const date = new Date(d + "T00:00:00");
+                            return date.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+                        });
+                        previewDates.innerHTML = formatted.map(d =>
+                            `<span class="px-2 py-1 bg-primary/10 text-primary rounded-md text-xs font-medium">${d}</span>`
+                        ).join("");
+                    } else {
+                        previewDates.innerHTML = '<span class="text-slate-400 italic">Unable to calculate preview</span>';
+                    }
+                })
+                .catch(() => {
+                    previewDates.innerHTML = '<span class="text-slate-400 italic">Preview unavailable</span>';
+                });
+        }
 
-document.querySelectorAll("[data-open-rule-modal]").forEach((btn) => {
-    btn.addEventListener("click", () => openRuleModal("create"));
-});
+        function debouncedPreview() {
+            clearTimeout(previewDebounceTimer);
+            previewDebounceTimer = setTimeout(updatePreview, 300);
+        }
 
-document.querySelectorAll("[data-rule-edit]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-        openRuleModal("edit", {
-            id: btn.dataset.ruleId,
-            name: btn.dataset.ruleName,
-            type: btn.dataset.ruleType,
-            amount: btn.dataset.ruleAmount,
-            category: btn.dataset.ruleCategory,
-            start: btn.dataset.ruleStart,
-            next: btn.dataset.ruleNext,
-            intervalUnit: btn.dataset.ruleIntervalUnit,
-            intervalCount: btn.dataset.ruleIntervalCount,
-            end: btn.dataset.ruleEnd,
-            policy: btn.dataset.rulePolicy,
-            auto: btn.dataset.ruleAuto,
-            weekends: btn.dataset.ruleWeekends,
+        // Show/hide month-day policy based on start date and interval
+        function updateMonthDayPolicyVisibility() {
+            const startDate = startDateInput.value;
+            const intervalUnit = intervalUnitSelect.value;
+
+            if (!startDate) {
+                monthDayPolicySection.classList.add("hidden");
+                return;
+            }
+
+            const day = new Date(startDate + "T00:00:00").getDate();
+            const showPolicy = (intervalUnit === "month" || intervalUnit === "year") && day > 28;
+
+            if (showPolicy) {
+                monthDayPolicySection.classList.remove("hidden");
+                // Auto-open advanced options if policy is relevant
+                document.getElementById("advanced-options").open = true;
+            } else {
+                monthDayPolicySection.classList.add("hidden");
+            }
+        }
+
+        // Attach event listeners
+        startDateInput.addEventListener("change", () => {
+            updateMonthDayPolicyVisibility();
+            debouncedPreview();
         });
-    });
-});
-})();
+        intervalCountInput.addEventListener("input", debouncedPreview);
+        intervalUnitSelect.addEventListener("change", () => {
+            updateMonthDayPolicyVisibility();
+            debouncedPreview();
+        });
+        monthDayPolicySelect.addEventListener("change", debouncedPreview);
+        skipWeekendsCheckbox.addEventListener("change", debouncedPreview);
+
+        function openRuleModal(mode = "create", data = {}) {
+            ruleForm.reset();
+            ruleForm.action = defaultAction;
+            modalTitle.textContent = mode === "create" ? "Add recurring rule" : "Edit recurring rule";
+            modalSubmit.textContent = mode === "create" ? "Save rule" : "Update rule";
+            nextOccurrenceHidden.value = "";
+            monthDayPolicySection.classList.add("hidden");
+            previewDates.innerHTML = '<span class="text-slate-400 italic">Enter a start date to see preview</span>';
+
+            if (mode === "edit") {
+                ruleForm.action = `/recurring/${data.id}`;
+                ruleForm.elements["name"].value = data.name || "";
+                ruleForm.elements["type"].value = data.type;
+                // Filter categories AFTER setting type, BEFORE setting category
+                filterCategories();
+                ruleForm.elements["amount"].value = data.amount;
+                ruleForm.elements["category_id"].value = data.category;
+                ruleForm.elements["start_date"].value = data.start || "";
+                ruleForm.elements["interval_unit"].value = data.intervalUnit;
+                ruleForm.elements["interval_count"].value = data.intervalCount;
+                ruleForm.elements["end_date"].value = data.end || "";
+                ruleForm.elements["month_day_policy"].value = data.policy;
+                ruleForm.elements["auto_post"].checked = data.auto === "true";
+                ruleForm.elements["skip_weekends"].checked = data.weekends === "true";
+                // Preserve next_occurrence for edits
+                nextOccurrenceHidden.value = data.next || "";
+
+                // Update visibility and preview after setting values
+                updateMonthDayPolicyVisibility();
+                updatePreview();
+            } else {
+                // For create mode, filter categories based on default type
+                filterCategories();
+            }
+
+            ruleModal.showModal();
+        }
+
+        document.querySelectorAll("[data-open-rule-modal]").forEach((btn) => {
+            btn.addEventListener("click", () => openRuleModal("create"));
+        });
+
+        document.querySelectorAll("[data-rule-edit]").forEach((btn) => {
+            btn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                openRuleModal("edit", {
+                    id: btn.dataset.ruleId,
+                    name: btn.dataset.ruleName,
+                    type: btn.dataset.ruleType,
+                    amount: btn.dataset.ruleAmount,
+                    category: btn.dataset.ruleCategory,
+                    start: btn.dataset.ruleStart,
+                    next: btn.dataset.ruleNext,
+                    intervalUnit: btn.dataset.ruleIntervalUnit,
+                    intervalCount: btn.dataset.ruleIntervalCount,
+                    end: btn.dataset.ruleEnd,
+                    policy: btn.dataset.rulePolicy,
+                    auto: btn.dataset.ruleAuto,
+                    weekends: btn.dataset.ruleWeekends,
+                });
+            });
+        });
+
+        // Row expansion for details
+        document.querySelectorAll("[data-recurring-row]").forEach((row) => {
+            row.addEventListener("click", (e) => {
+                // Don't expand if clicking on a button or link
+                if (e.target.closest("button, a, form")) return;
+
+                const ruleId = row.dataset.recurringRow;
+                const detailsRow = document.querySelector(`[data-recurring-details="${ruleId}"]`);
+                const isExpanded = row.getAttribute("aria-expanded") === "true";
+
+                row.setAttribute("aria-expanded", !isExpanded);
+                detailsRow.setAttribute("aria-hidden", isExpanded);
+                detailsRow.classList.toggle("is-expanded", !isExpanded);
+            });
+
+            row.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    row.click();
+                }
+            });
+        });
+    })();
 </script>
 {% endblock %}

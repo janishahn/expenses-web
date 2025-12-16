@@ -1,160 +1,162 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="space-y-6">
-	    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-	        <div>
-	            <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Ledger</p>
-	            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Transactions</h1>
-	            <p class="text-slate-500 dark:text-slate-400">Filter, audit, and export your activity.</p>
-	        </div>
-	        <div class="flex flex-wrap gap-2">
-	            <a href="/transactions/deleted" class="btn btn-ghost btn-sm">Trash</a>
-	            <a href="/transactions/export.csv?{{ period_query }}{% if filter_query %}&{{ filter_query }}{% endif %}" class="btn btn-primary btn-sm">
-	                Export CSV
-	            </a>
-	        </div>
-	    </div>
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Ledger</p>
+            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Transactions</h1>
+            <p class="text-slate-500 dark:text-slate-400">Filter, audit, and export your activity.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="/transactions/deleted" class="btn btn-ghost btn-sm">Trash</a>
+            <a href="/transactions/export.csv?{{ period_query }}{% if filter_query %}&{{ filter_query }}{% endif %}"
+                class="btn btn-primary btn-sm">
+                Export CSV
+            </a>
+        </div>
+    </div>
 
-    <form id="transactions-filter-form"
-          method="get"
-          data-initial-start="{{ period.start }}"
-          data-initial-end="{{ period.end }}"
-          data-initial-period="{{ period.slug }}"
-          class="card shadow-hover">
-	        <input type="hidden" name="start" value="{{ period.start }}">
-	        <input type="hidden" name="end" value="{{ period.end }}">
-	        <input type="hidden" name="period" value="{{ period.slug }}">
-	        <input type="hidden" name="type" value="{{ filters.type.value if filters.type else '' }}">
-	        <div class="card-body space-y-3">
-	                {% set ns = namespace(category_label=None) %}
-	                {% if filters.category_id %}
-	                    {% for category in categories %}
-	                        {% if filters.category_id == category.id %}
-	                            {% set ns.category_label = category.name %}
-	                        {% endif %}
-	                    {% endfor %}
-	                {% endif %}
+    <form id="transactions-filter-form" method="get" data-initial-start="{{ period.start }}"
+        data-initial-end="{{ period.end }}" data-initial-period="{{ period.slug }}" class="card shadow-hover">
+        <input type="hidden" name="start" value="{{ period.start }}">
+        <input type="hidden" name="end" value="{{ period.end }}">
+        <input type="hidden" name="period" value="{{ period.slug }}">
+        <input type="hidden" name="type" value="{{ filters.type.value if filters.type else '' }}">
+        <div class="card-body space-y-3">
+            {% set ns = namespace(category_label=None) %}
+            {% if filters.category_id %}
+            {% for category in categories %}
+            {% if filters.category_id == category.id %}
+            {% set ns.category_label = category.name %}
+            {% endif %}
+            {% endfor %}
+            {% endif %}
 
-	                <div class="transactions-filter-summary">
-	                    <div class="transactions-filter-summary-left">
-	                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Filters</p>
-	                        <div class="transactions-filter-chips" aria-label="Applied filters">
-	                            <span class="pill">Date: {{ period.start }} → {{ period.end }}</span>
-	                            {% if filters.type %}
-	                                <span class="pill">Type: {{ filters.type.value|title }}</span>
-	                            {% endif %}
-	                            {% if filters.category_id %}
-	                                <span class="pill">Category: {{ ns.category_label or "Selected" }}</span>
-	                            {% endif %}
-	                            {% if filters.query %}
-	                                <span class="pill">Search: “{{ filters.query }}”</span>
-	                            {% endif %}
-	                            {% if not filters.type and not filters.category_id and not filters.query %}
-	                                <span class="pill">No extra filters</span>
-	                            {% endif %}
-	                        </div>
-	                    </div>
-
-	                    <button type="button"
-	                            class="btn btn-secondary btn-sm"
-	                            data-filter-toggle
-                            aria-expanded="false"
-                            aria-controls="transactions-filter-panel">
-                        <span data-filter-toggle-label>Show filters</span>
-                        {{ icon("chevron-down", class="icon filter-toggle-icon") }}
-                    </button>
-                </div>
-
-                <div id="transactions-filter-panel" class="transactions-filter-panel" data-expanded="false" aria-hidden="true" inert>
-                    <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 xl:gap-6 xl:items-end pt-4">
-                        <div class="xl:col-span-5 space-y-4">
-                            <div class="space-y-2">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Date range</p>
-                                <div id="transactions-range-picker"></div>
-                            </div>
-                            <div class="space-y-2">
-                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick ranges</p>
-                                <div class="chip-group" role="group" aria-label="Period presets">
-                                    <button type="button" class="chip" data-period-chip="this_month">This Month</button>
-                                    <button type="button" class="chip" data-period-chip="last_month">Last Month</button>
-                                    <button type="button" class="chip" data-period-chip="all">All time</button>
-                                    <button type="button" class="chip" data-period-chip="custom">Custom</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="xl:col-span-3 space-y-2">
-                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type</p>
-                            <div class="segmented" role="group" aria-label="Filter by type">
-                                <button type="button" data-txn-type="">All</button>
-                                <button type="button" data-txn-type="income">Income</button>
-                                <button type="button" data-txn-type="expense">Expense</button>
-                            </div>
-                        </div>
-
-                        <label class="xl:col-span-4 space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                            Category
-                            <select name="category" class="select">
-                                <option value="">All categories</option>
-                                {% for category in categories %}
-                                <option value="{{ category.id }}" {% if filters.category_id == category.id %}selected{% endif %}>
-                                    {{ category.name }} ({{ category.type.value|title }})
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </label>
-                    </div>
-
-                    <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 xl:items-end pt-4">
-                        <label class="xl:col-span-8 space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                            Search notes
-                            <input type="text" name="q" value="{{ filters.query or '' }}" placeholder="Find a memo..." class="input">
-                        </label>
-                        <div class="xl:col-span-4 flex flex-col sm:flex-row sm:justify-end gap-3">
-                            <button type="button" class="btn btn-ghost" data-reset-filters>Reset</button>
-                            <button type="submit" class="btn btn-primary btn-lg">Apply Filters</button>
-                        </div>
+            <div class="transactions-filter-summary">
+                <div class="transactions-filter-summary-left">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Filters
+                    </p>
+                    <div class="transactions-filter-chips" aria-label="Applied filters">
+                        <span class="pill">Date: {{ period.start|eurodate }} → {{ period.end|eurodate }}</span>
+                        {% if filters.type %}
+                        <span class="pill">Type: {{ filters.type.value|title }}</span>
+                        {% endif %}
+                        {% if filters.category_id %}
+                        <span class="pill">Category: {{ ns.category_label or "Selected" }}</span>
+                        {% endif %}
+                        {% if filters.query %}
+                        <span class="pill">Search: “{{ filters.query }}”</span>
+                        {% endif %}
+                        {% if not filters.type and not filters.category_id and not filters.query %}
+                        <span class="pill">No extra filters</span>
+                        {% endif %}
                     </div>
                 </div>
-	        </div>
-	    </form>
+
+                <button type="button" class="btn btn-secondary btn-sm" data-filter-toggle aria-expanded="false"
+                    aria-controls="transactions-filter-panel">
+                    <span data-filter-toggle-label>Show filters</span>
+                    {{ icon("chevron-down", class="icon filter-toggle-icon") }}
+                </button>
+            </div>
+
+            <div id="transactions-filter-panel" class="transactions-filter-panel" data-expanded="false"
+                aria-hidden="true" inert>
+                <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 xl:gap-6 xl:items-end pt-4">
+                    <div class="xl:col-span-5 space-y-4">
+                        <div class="space-y-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Date range</p>
+                            <div id="transactions-range-picker"></div>
+                        </div>
+                        <div class="space-y-2">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                Quick ranges</p>
+                            <div class="chip-group" role="group" aria-label="Period presets">
+                                <button type="button" class="chip" data-period-chip="this_month">This Month</button>
+                                <button type="button" class="chip" data-period-chip="last_month">Last Month</button>
+                                <button type="button" class="chip" data-period-chip="all">All time</button>
+                                <button type="button" class="chip" data-period-chip="custom">Custom</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="xl:col-span-3 space-y-2">
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Type
+                        </p>
+                        <div class="segmented" role="group" aria-label="Filter by type">
+                            <button type="button" data-txn-type="">All</button>
+                            <button type="button" data-txn-type="income">Income</button>
+                            <button type="button" data-txn-type="expense">Expense</button>
+                        </div>
+                    </div>
+
+                    <label class="xl:col-span-4 space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                        Category
+                        <select name="category" class="select">
+                            <option value="">All categories</option>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}" {% if filters.category_id==category.id %}selected{% endif
+                                %}>
+                                {{ category.name }} ({{ category.type.value|title }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-12 gap-4 xl:items-end pt-4">
+                    <label class="xl:col-span-8 space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                        Search notes
+                        <input type="text" name="q" value="{{ filters.query or '' }}" placeholder="Find a memo..."
+                            class="input">
+                    </label>
+                    <div class="xl:col-span-4 flex flex-col sm:flex-row sm:justify-end gap-3">
+                        <button type="button" class="btn btn-ghost" data-reset-filters>Reset</button>
+                        <button type="submit" class="btn btn-primary btn-lg">Apply Filters</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
 
     {% if transactions %}
     <div class="space-y-6">
         <div class="lg:hidden space-y-3">
-	            {% for txn in transactions %}
-	            {% set is_expense = txn.type.value == 'expense' %}
-	            <div class="card shadow-hover p-4 flex gap-4 items-start" id="txn-card-{{ txn.id }}">
-	                <div class="flex-1 space-y-1">
-	                    <div class="flex items-center gap-2">
-	                        <p class="font-semibold text-slate-800 dark:text-slate-100">{{ txn.note or (txn.category.name if txn.category else "Untitled entry") }}</p>
-	                        <span class="badge badge-muted text-xs">{{ txn.type.value|title }}</span>
-	                    </div>
-	                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ txn.date }} {{ txn.occurred_at.strftime('%H:%M') }} • {{ txn.category.name if txn.category else "Uncategorized" }}</p>
-	                </div>
+            {% for txn in transactions %}
+            {% set is_expense = txn.type.value == 'expense' %}
+            <div class="card shadow-hover p-4 flex gap-4 items-start" id="txn-card-{{ txn.id }}">
+                <div class="flex-1 space-y-1">
+                    <div class="flex items-center gap-2">
+                        <p class="font-semibold text-slate-800 dark:text-slate-100">{{ txn.note or (txn.category.name if
+                            txn.category else "Untitled entry") }}</p>
+                        <span class="badge badge-muted text-xs">{{ txn.type.value|title }}</span>
+                    </div>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ txn.date|eurodate }} {{
+                        txn.occurred_at.strftime('%H:%M') }} • {{ txn.category.name if txn.category else "Uncategorized"
+                        }}</p>
+                </div>
                 <div class="text-right">
-                    <p class="tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                    <p
+                        class="tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
                         {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
                     </p>
                     <div class="mt-2 inline-flex items-center gap-1">
-                        <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon" data-tooltip="Edit entry">
+                        <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon"
+                            data-tooltip="Edit entry">
                             {{ icon("pencil", class="icon") }}
                         </a>
-                        <button type="button"
-                                class="btn btn-ghost btn-icon"
-                                data-tooltip="Delete entry"
-                                hx-post="/transactions/{{ txn.id }}/delete"
-                                hx-vals='{"csrf_token": "{{ csrf_token() }}"}'
-                                hx-target="#txn-card-{{ txn.id }}"
-                                hx-swap="outerHTML"
-                                hx-confirm="Delete this transaction?">
+                        <button type="button" class="btn btn-ghost btn-icon" data-tooltip="Delete entry"
+                            hx-post="/transactions/{{ txn.id }}/delete" hx-vals='{"csrf_token": "{{ csrf_token() }}"}'
+                            hx-target="#txn-card-{{ txn.id }}" hx-swap="outerHTML"
+                            hx-confirm="Delete this transaction?">
                             {{ icon("trash-2", class="icon") }}
                         </button>
                     </div>
                 </div>
             </div>
-	            {% endfor %}
-	        </div>
+            {% endfor %}
+        </div>
 
         <div class="hidden lg:block card shadow-hover">
             <div class="card-body p-0">
@@ -172,29 +174,27 @@
                     <tbody>
                         {% for txn in transactions %}
                         {% set is_expense = txn.type.value == 'expense' %}
-	                        <tr id="txn-row-{{ txn.id }}">
-	                            <td>{{ txn.date }} {{ txn.occurred_at.strftime('%H:%M') }}</td>
-	                            <td class="font-medium text-slate-800 dark:text-slate-100">
-	                                {{ txn.note or "Untitled entry" }}
-	                            </td>
+                        <tr id="txn-row-{{ txn.id }}">
+                            <td>{{ txn.date|eurodate }} {{ txn.occurred_at.strftime('%H:%M') }}</td>
+                            <td class="font-medium text-slate-800 dark:text-slate-100">
+                                {{ txn.note or "Untitled entry" }}
+                            </td>
                             <td>{{ txn.category.name if txn.category else "Uncategorized" }}</td>
                             <td>{{ txn.type.value|title }}</td>
-                            <td class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                            <td
+                                class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
                                 {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
                             </td>
                             <td class="text-right">
                                 <div class="inline-flex items-center gap-1 justify-end">
-                                    <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon" data-tooltip="Edit entry">
+                                    <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}"
+                                        class="btn btn-ghost btn-icon" data-tooltip="Edit entry">
                                         {{ icon("pencil", class="icon") }}
                                     </a>
-                                    <button type="button"
-                                            class="btn btn-ghost btn-icon"
-                                            data-tooltip="Delete entry"
-                                            hx-post="/transactions/{{ txn.id }}/delete"
-                                            hx-vals='{"csrf_token": "{{ csrf_token() }}"}'
-                                            hx-target="#txn-row-{{ txn.id }}"
-                                            hx-swap="outerHTML"
-                                            hx-confirm="Delete this transaction?">
+                                    <button type="button" class="btn btn-ghost btn-icon" data-tooltip="Delete entry"
+                                        hx-post="/transactions/{{ txn.id }}/delete"
+                                        hx-vals='{"csrf_token": "{{ csrf_token() }}"}' hx-target="#txn-row-{{ txn.id }}"
+                                        hx-swap="outerHTML" hx-confirm="Delete this transaction?">
                                         {{ icon("trash-2", class="icon") }}
                                     </button>
                                 </div>
@@ -222,13 +222,15 @@
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
             {% if page > 1 %}
-            <a href="?page={{ page - 1 }}&{{ period_query }}{% if filter_query %}&{{ filter_query }}{% endif %}" class="btn btn-secondary btn-sm">Previous</a>
+            <a href="?page={{ page - 1 }}&{{ period_query }}{% if filter_query %}&{{ filter_query }}{% endif %}"
+                class="btn btn-secondary btn-sm">Previous</a>
             {% endif %}
         </div>
         <p class="text-sm text-slate-500 dark:text-slate-400 text-center">Page {{ page }}</p>
         <div>
             {% if has_more %}
-            <a href="?page={{ page + 1 }}&{{ period_query }}{% if filter_query %}&{{ filter_query }}{% endif %}" class="btn btn-secondary btn-sm">Next</a>
+            <a href="?page={{ page + 1 }}&{{ period_query }}{% if filter_query %}&{{ filter_query }}{% endif %}"
+                class="btn btn-secondary btn-sm">Next</a>
             {% endif %}
         </div>
     </div>
@@ -237,223 +239,223 @@
 </section>
 
 <script>
-(function () {
-const txnForm = document.getElementById("transactions-filter-form");
-if (!txnForm) return;
-const typeChips = Array.from(document.querySelectorAll("[data-txn-type]"));
-const resetBtn = document.querySelector("[data-reset-filters]");
-const periodChips = Array.from(document.querySelectorAll("[data-period-chip]"));
-const filterPanel = document.getElementById("transactions-filter-panel");
-const filterToggleBtn = document.querySelector("[data-filter-toggle]");
-const filterToggleLabel = filterToggleBtn ? filterToggleBtn.querySelector("[data-filter-toggle-label]") : null;
-let rangeApi = null;
-let pickerMounted = false;
-let openCustomWhenReady = false;
+    (function () {
+        const txnForm = document.getElementById("transactions-filter-form");
+        if (!txnForm) return;
+        const typeChips = Array.from(document.querySelectorAll("[data-txn-type]"));
+        const resetBtn = document.querySelector("[data-reset-filters]");
+        const periodChips = Array.from(document.querySelectorAll("[data-period-chip]"));
+        const filterPanel = document.getElementById("transactions-filter-panel");
+        const filterToggleBtn = document.querySelector("[data-filter-toggle]");
+        const filterToggleLabel = filterToggleBtn ? filterToggleBtn.querySelector("[data-filter-toggle-label]") : null;
+        let rangeApi = null;
+        let pickerMounted = false;
+        let openCustomWhenReady = false;
 
-function setFilterPanelExpanded(expanded, animate = true) {
-    if (!filterPanel || !filterToggleBtn) return;
+        function setFilterPanelExpanded(expanded, animate = true) {
+            if (!filterPanel || !filterToggleBtn) return;
 
-    filterToggleBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
-    filterPanel.setAttribute("aria-hidden", expanded ? "false" : "true");
-    txnForm.classList.toggle("filters-expanded", expanded);
-    filterPanel.dataset.expanded = expanded ? "true" : "false";
-    filterPanel.classList.toggle("is-expanded", expanded);
+            filterToggleBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
+            filterPanel.setAttribute("aria-hidden", expanded ? "false" : "true");
+            txnForm.classList.toggle("filters-expanded", expanded);
+            filterPanel.dataset.expanded = expanded ? "true" : "false";
+            filterPanel.classList.toggle("is-expanded", expanded);
 
-    if (filterToggleLabel) {
-        filterToggleLabel.textContent = expanded ? "Hide filters" : "Show filters";
-    }
-
-    if (expanded) {
-        filterPanel.removeAttribute("inert");
-    } else {
-        filterPanel.setAttribute("inert", "");
-    }
-
-    const controls = filterPanel.querySelectorAll("input, select, textarea, button");
-    controls.forEach((el) => {
-        el.disabled = !expanded;
-    });
-
-    if (expanded) {
-        ensurePickerMounted();
-        if (!animate) {
-            filterPanel.style.maxHeight = "none";
-            return;
-        }
-
-        filterPanel.style.maxHeight = "0px";
-        filterPanel.offsetHeight;
-        filterPanel.style.maxHeight = `${filterPanel.scrollHeight}px`;
-        const onEnd = (event) => {
-            if (event.propertyName !== "max-height") return;
-            filterPanel.style.maxHeight = "none";
-        };
-        filterPanel.addEventListener("transitionend", onEnd, { once: true });
-    } else {
-        if (!animate) {
-            filterPanel.style.maxHeight = "0px";
-            return;
-        }
-
-        const currentHeight = filterPanel.scrollHeight;
-        filterPanel.style.maxHeight = filterPanel.style.maxHeight === "none" ? `${currentHeight}px` : filterPanel.style.maxHeight;
-        filterPanel.offsetHeight;
-        filterPanel.style.maxHeight = "0px";
-    }
-}
-
-function ensurePickerMounted() {
-    if (pickerMounted) return;
-    pickerMounted = true;
-    mountTransactionsPicker();
-}
-
-function toLocalIso(d) {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-}
-
-function highlightType(type) {
-    typeChips.forEach((chip) => {
-        chip.classList.toggle("is-active", chip.dataset.txnType === type);
-    });
-}
-
-function syncPeriodChips(slug) {
-    periodChips.forEach((chip) => {
-        chip.classList.toggle("is-active", chip.dataset.periodChip === slug);
-    });
-}
-
-function submitFilters() {
-    if (typeof txnForm.requestSubmit === "function") {
-        txnForm.requestSubmit();
-    } else {
-        txnForm.submit();
-    }
-}
-
-function setType(type) {
-    txnForm.elements["type"].value = type;
-    highlightType(type);
-}
-
-function setPeriod(slug) {
-    const today = new Date();
-    let startDate = null;
-    let endDate = null;
-
-    if (slug === "this_month") {
-        startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-        endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-    } else if (slug === "last_month") {
-        startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        endDate = new Date(today.getFullYear(), today.getMonth(), 0);
-    } else if (slug === "all") {
-        startDate = new Date(1970, 0, 1);
-        endDate = today;
-    } else if (slug === "custom" && rangeApi) {
-        rangeApi.open();
-    } else if (slug === "custom") {
-        ensurePickerMounted();
-        openCustomWhenReady = true;
-    }
-
-    txnForm.elements["period"].value = slug;
-    syncPeriodChips(slug);
-
-    if (startDate && endDate) {
-        const startStr = toLocalIso(startDate);
-        const endStr = toLocalIso(endDate);
-        txnForm.elements["start"].value = startStr;
-        txnForm.elements["end"].value = endStr;
-        if (rangeApi) {
-            rangeApi.setRange(startStr, endStr);
-            rangeApi.close();
-        }
-        submitFilters();
-    }
-}
-
-function resetFilters() {
-    const initialStart = txnForm.dataset.initialStart;
-    const initialEnd = txnForm.dataset.initialEnd;
-    const initialPeriod = txnForm.dataset.initialPeriod;
-    txnForm.elements["start"].value = initialStart;
-    txnForm.elements["end"].value = initialEnd;
-    txnForm.elements["period"].value = initialPeriod;
-    txnForm.elements["type"].value = "";
-    txnForm.elements["category"].value = "";
-    txnForm.elements["q"].value = "";
-    highlightType("");
-    syncPeriodChips(initialPeriod);
-    if (rangeApi) {
-        rangeApi.setRange(initialStart, initialEnd);
-    }
-}
-
-typeChips.forEach((chip) => {
-    chip.addEventListener("click", () => {
-        setType(chip.dataset.txnType);
-    });
-});
-
-if (resetBtn) {
-    resetBtn.addEventListener("click", () => {
-        resetFilters();
-    });
-}
-
-periodChips.forEach((chip) => {
-    chip.addEventListener("click", () => {
-        setPeriod(chip.dataset.periodChip);
-    });
-});
-
-function mountTransactionsPicker() {
-    const host = document.getElementById("transactions-range-picker");
-    if (!host) return;
-    if (!window.mountDateRangePicker) {
-        window.setTimeout(mountTransactionsPicker, 50);
-        return;
-    }
-    window.mountDateRangePicker("transactions-range-picker", {
-        initialStart: txnForm.elements["start"].value,
-        initialEnd: txnForm.elements["end"].value,
-        onApply: (s, e) => {
-            txnForm.elements["start"].value = s;
-            txnForm.elements["end"].value = e;
-            txnForm.elements["period"].value = "custom";
-            syncPeriodChips("custom");
-            submitFilters();
-        },
-        onExpose: (api) => {
-            rangeApi = api;
-            if (openCustomWhenReady) {
-                openCustomWhenReady = false;
-                rangeApi.open();
+            if (filterToggleLabel) {
+                filterToggleLabel.textContent = expanded ? "Hide filters" : "Show filters";
             }
-        },
-    });
-}
 
-if (filterPanel) {
-    filterPanel.style.maxHeight = "0px";
-    setFilterPanelExpanded(false, false);
-}
+            if (expanded) {
+                filterPanel.removeAttribute("inert");
+            } else {
+                filterPanel.setAttribute("inert", "");
+            }
 
-if (filterToggleBtn) {
-    const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    filterToggleBtn.addEventListener("click", () => {
-        const expanded = filterToggleBtn.getAttribute("aria-expanded") === "true";
-        setFilterPanelExpanded(!expanded, !prefersReducedMotion);
-    });
-}
+            const controls = filterPanel.querySelectorAll("input, select, textarea, button");
+            controls.forEach((el) => {
+                el.disabled = !expanded;
+            });
 
-highlightType(txnForm.elements["type"].value || "");
-syncPeriodChips(txnForm.elements["period"].value || "");
-})();
+            if (expanded) {
+                ensurePickerMounted();
+                if (!animate) {
+                    filterPanel.style.maxHeight = "none";
+                    return;
+                }
+
+                filterPanel.style.maxHeight = "0px";
+                filterPanel.offsetHeight;
+                filterPanel.style.maxHeight = `${filterPanel.scrollHeight}px`;
+                const onEnd = (event) => {
+                    if (event.propertyName !== "max-height") return;
+                    filterPanel.style.maxHeight = "none";
+                };
+                filterPanel.addEventListener("transitionend", onEnd, { once: true });
+            } else {
+                if (!animate) {
+                    filterPanel.style.maxHeight = "0px";
+                    return;
+                }
+
+                const currentHeight = filterPanel.scrollHeight;
+                filterPanel.style.maxHeight = filterPanel.style.maxHeight === "none" ? `${currentHeight}px` : filterPanel.style.maxHeight;
+                filterPanel.offsetHeight;
+                filterPanel.style.maxHeight = "0px";
+            }
+        }
+
+        function ensurePickerMounted() {
+            if (pickerMounted) return;
+            pickerMounted = true;
+            mountTransactionsPicker();
+        }
+
+        function toLocalIso(d) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            return `${year}-${month}-${day}`;
+        }
+
+        function highlightType(type) {
+            typeChips.forEach((chip) => {
+                chip.classList.toggle("is-active", chip.dataset.txnType === type);
+            });
+        }
+
+        function syncPeriodChips(slug) {
+            periodChips.forEach((chip) => {
+                chip.classList.toggle("is-active", chip.dataset.periodChip === slug);
+            });
+        }
+
+        function submitFilters() {
+            if (typeof txnForm.requestSubmit === "function") {
+                txnForm.requestSubmit();
+            } else {
+                txnForm.submit();
+            }
+        }
+
+        function setType(type) {
+            txnForm.elements["type"].value = type;
+            highlightType(type);
+        }
+
+        function setPeriod(slug) {
+            const today = new Date();
+            let startDate = null;
+            let endDate = null;
+
+            if (slug === "this_month") {
+                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            } else if (slug === "last_month") {
+                startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+            } else if (slug === "all") {
+                startDate = new Date(1970, 0, 1);
+                endDate = today;
+            } else if (slug === "custom" && rangeApi) {
+                rangeApi.open();
+            } else if (slug === "custom") {
+                ensurePickerMounted();
+                openCustomWhenReady = true;
+            }
+
+            txnForm.elements["period"].value = slug;
+            syncPeriodChips(slug);
+
+            if (startDate && endDate) {
+                const startStr = toLocalIso(startDate);
+                const endStr = toLocalIso(endDate);
+                txnForm.elements["start"].value = startStr;
+                txnForm.elements["end"].value = endStr;
+                if (rangeApi) {
+                    rangeApi.setRange(startStr, endStr);
+                    rangeApi.close();
+                }
+                submitFilters();
+            }
+        }
+
+        function resetFilters() {
+            const initialStart = txnForm.dataset.initialStart;
+            const initialEnd = txnForm.dataset.initialEnd;
+            const initialPeriod = txnForm.dataset.initialPeriod;
+            txnForm.elements["start"].value = initialStart;
+            txnForm.elements["end"].value = initialEnd;
+            txnForm.elements["period"].value = initialPeriod;
+            txnForm.elements["type"].value = "";
+            txnForm.elements["category"].value = "";
+            txnForm.elements["q"].value = "";
+            highlightType("");
+            syncPeriodChips(initialPeriod);
+            if (rangeApi) {
+                rangeApi.setRange(initialStart, initialEnd);
+            }
+        }
+
+        typeChips.forEach((chip) => {
+            chip.addEventListener("click", () => {
+                setType(chip.dataset.txnType);
+            });
+        });
+
+        if (resetBtn) {
+            resetBtn.addEventListener("click", () => {
+                resetFilters();
+            });
+        }
+
+        periodChips.forEach((chip) => {
+            chip.addEventListener("click", () => {
+                setPeriod(chip.dataset.periodChip);
+            });
+        });
+
+        function mountTransactionsPicker() {
+            const host = document.getElementById("transactions-range-picker");
+            if (!host) return;
+            if (!window.mountDateRangePicker) {
+                window.setTimeout(mountTransactionsPicker, 50);
+                return;
+            }
+            window.mountDateRangePicker("transactions-range-picker", {
+                initialStart: txnForm.elements["start"].value,
+                initialEnd: txnForm.elements["end"].value,
+                onApply: (s, e) => {
+                    txnForm.elements["start"].value = s;
+                    txnForm.elements["end"].value = e;
+                    txnForm.elements["period"].value = "custom";
+                    syncPeriodChips("custom");
+                    submitFilters();
+                },
+                onExpose: (api) => {
+                    rangeApi = api;
+                    if (openCustomWhenReady) {
+                        openCustomWhenReady = false;
+                        rangeApi.open();
+                    }
+                },
+            });
+        }
+
+        if (filterPanel) {
+            filterPanel.style.maxHeight = "0px";
+            setFilterPanelExpanded(false, false);
+        }
+
+        if (filterToggleBtn) {
+            const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            filterToggleBtn.addEventListener("click", () => {
+                const expanded = filterToggleBtn.getAttribute("aria-expanded") === "true";
+                setFilterPanelExpanded(!expanded, !prefersReducedMotion);
+            });
+        }
+
+        highlightType(txnForm.elements["type"].value || "");
+        syncPeriodChips(txnForm.elements["period"].value || "");
+    })();
 </script>
 {% endblock %}

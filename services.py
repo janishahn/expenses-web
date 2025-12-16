@@ -59,6 +59,7 @@ def update_monthly_rollup(
             expense_cents=0,
         )
         session.add(rollup)
+        session.flush()  # Flush immediately to prevent duplicate inserts for same month
 
     if txn_type == TransactionType.income:
         rollup.income_cents = max(0, rollup.income_cents + sign * amount_cents)
@@ -847,6 +848,87 @@ class RecurringRuleService:
             .order_by(RecurringRule.next_occurrence)
         )
         return self.session.scalars(stmt).all()
+
+    def get_statistics(self) -> dict[str, object]:
+        """Calculate statistics for recurring rules, normalized to monthly amounts."""
+        from models import IntervalUnit
+
+        rules = self.list()
+
+        def monthly_amount(rule: RecurringRule) -> int:
+            """Convert a rule's amount to monthly equivalent in cents."""
+            interval = rule.interval_unit
+            count = rule.interval_count
+            amount = rule.amount_cents
+
+            if interval == IntervalUnit.day:
+                # Approximate 30.44 days per month
+                return int(amount * 30.44 / count)
+            elif interval == IntervalUnit.week:
+                # ~4.35 weeks per month
+                return int(amount * 4.35 / count)
+            elif interval == IntervalUnit.month:
+                return int(amount / count)
+            elif interval == IntervalUnit.year:
+                return int(amount / (12 * count))
+            return amount
+
+        total_income = 0
+        total_expenses = 0
+        income_by_category: dict[str, int] = {}
+        expense_by_category: dict[str, int] = {}
+        income_count = 0
+        expense_count = 0
+
+        for rule in rules:
+            monthly = monthly_amount(rule)
+            category_name = rule.category.name if rule.category else "Uncategorized"
+
+            if rule.type == TransactionType.income:
+                total_income += monthly
+                income_count += 1
+                income_by_category[category_name] = (
+                    income_by_category.get(category_name, 0) + monthly
+                )
+            else:
+                total_expenses += monthly
+                expense_count += 1
+                expense_by_category[category_name] = (
+                    expense_by_category.get(category_name, 0) + monthly
+                )
+
+        # Calculate coverage ratio (what % of expenses are covered by income)
+        coverage_ratio = (
+            (total_income / total_expenses * 100) if total_expenses > 0 else 100.0
+        )
+
+        # Build category breakdowns with percentages
+        def build_breakdown(by_category: dict[str, int], total: int) -> list[dict]:
+            if total == 0:
+                return []
+            items = sorted(by_category.items(), key=lambda x: x[1], reverse=True)
+            return [
+                {
+                    "name": name,
+                    "amount_cents": amount,
+                    "percent": (amount / total * 100) if total > 0 else 0,
+                }
+                for name, amount in items
+            ]
+
+        return {
+            "total_monthly_income": total_income,
+            "total_monthly_expenses": total_expenses,
+            "net_monthly": total_income - total_expenses,
+            "coverage_ratio": coverage_ratio,
+            "expense_breakdown": build_breakdown(expense_by_category, total_expenses),
+            "income_breakdown": build_breakdown(income_by_category, total_income),
+            "rule_counts": {
+                "income": income_count,
+                "expense": expense_count,
+                "total": income_count + expense_count,
+            },
+        }
 
     def create(self, data: RecurringRuleIn) -> RecurringRule:
         category = self.session.get(Category, data.category_id)

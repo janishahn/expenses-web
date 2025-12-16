@@ -203,27 +203,48 @@
       }
 
       const txnTrigger = event.target.closest("[data-open-transaction]");
-	      if (txnTrigger) {
-	        const modal = document.getElementById("transaction-modal");
-	        const form = modal?.querySelector("form");
-	        if (form) {
-	          form.reset();
-	          const end = document.querySelector("#dashboard-filter-form input[name='end']")?.value;
-	          const occurredAtInput = form.querySelector("input[name='occurred_at']");
-	          if (occurredAtInput) {
-	            const when = new Date();
-	            if (end) {
-	              const [y, m, d] = end.split("-").map((v) => parseInt(v, 10));
-	              if (y && m && d) {
-	                when.setFullYear(y, m - 1, d);
-	              }
-	            }
-	            occurredAtInput.value = toLocalDateTimeInputValue(when);
-	          }
-	        }
-	        openDialog(modal);
+      if (txnTrigger) {
+        const modal = document.getElementById("transaction-modal");
+        const form = modal?.querySelector("form");
+        if (form) {
+          form.reset();
+          const end = document.querySelector("#dashboard-filter-form input[name='end']")?.value;
+          const occurredAtInput = form.querySelector("input[name='occurred_at']");
+          if (occurredAtInput) {
+            const when = new Date();
+            if (end) {
+              const [y, m, d] = end.split("-").map((v) => parseInt(v, 10));
+              if (y && m && d) {
+                when.setFullYear(y, m - 1, d);
+              }
+            }
+            occurredAtInput.value = toLocalDateTimeInputValue(when);
+          }
+        }
+        openDialog(modal);
         window.setTimeout(() => {
           const first = modal?.querySelector('input[name="amount"], input, select, textarea, button');
+          first?.focus?.();
+        }, 0);
+        return;
+      }
+
+      const categoryClose = event.target.closest("[data-close-category]");
+      if (categoryClose) {
+        closeDialog(document.getElementById("category-modal"));
+        return;
+      }
+
+      const categoryTrigger = event.target.closest("[data-open-category]");
+      if (categoryTrigger) {
+        const modal = document.getElementById("category-modal");
+        const form = modal?.querySelector("form");
+        if (form) {
+          form.reset();
+        }
+        openDialog(modal);
+        window.setTimeout(() => {
+          const first = modal?.querySelector('input[name="name"], input, select, textarea, button');
           first?.focus?.();
         }, 0);
         return;
@@ -243,18 +264,18 @@
         return;
       }
 
-	      const balanceAnchorTrigger = event.target.closest("[data-open-balance-anchor]");
-	      if (balanceAnchorTrigger) {
-	        const modal = document.getElementById("balance-anchor-modal");
-	        const form = modal?.querySelector("form");
-	        if (form) {
-	          form.reset();
-	          const asOfAtInput = form.querySelector("input[name='as_of_at']");
-	          if (asOfAtInput) {
-	            asOfAtInput.value = toLocalDateTimeInputValue(new Date());
-	          }
-	        }
-	        openDialog(modal);
+      const balanceAnchorTrigger = event.target.closest("[data-open-balance-anchor]");
+      if (balanceAnchorTrigger) {
+        const modal = document.getElementById("balance-anchor-modal");
+        const form = modal?.querySelector("form");
+        if (form) {
+          form.reset();
+          const asOfAtInput = form.querySelector("input[name='as_of_at']");
+          if (asOfAtInput) {
+            asOfAtInput.value = toLocalDateTimeInputValue(new Date());
+          }
+        }
+        openDialog(modal);
         window.setTimeout(() => {
           const first = modal?.querySelector('input[name="balance"], input, select, textarea, button');
           first?.focus?.();
@@ -265,15 +286,15 @@
       const balanceAnchorEditTrigger = event.target.closest(
         "[data-open-balance-anchor-edit]"
       );
-	      if (balanceAnchorEditTrigger) {
-	        const modal = document.getElementById("balance-anchor-edit-modal");
-	        const form = document.getElementById("balance-anchor-edit-form");
-	        if (form) {
-	          const anchorId = balanceAnchorEditTrigger.getAttribute("data-anchor-id");
-	          const anchorAt = balanceAnchorEditTrigger.getAttribute("data-anchor-at");
-	          const balanceCents = balanceAnchorEditTrigger.getAttribute(
-	            "data-anchor-balance-cents"
-	          );
+      if (balanceAnchorEditTrigger) {
+        const modal = document.getElementById("balance-anchor-edit-modal");
+        const form = document.getElementById("balance-anchor-edit-form");
+        if (form) {
+          const anchorId = balanceAnchorEditTrigger.getAttribute("data-anchor-id");
+          const anchorAt = balanceAnchorEditTrigger.getAttribute("data-anchor-at");
+          const balanceCents = balanceAnchorEditTrigger.getAttribute(
+            "data-anchor-balance-cents"
+          );
           const note =
             balanceAnchorEditTrigger.getAttribute("data-anchor-note") || "";
           if (anchorId) {
@@ -281,13 +302,13 @@
             form.setAttribute("action", action);
             form.setAttribute("hx-post", action);
           }
-	          const asOfAtInput = form.querySelector('input[name="as_of_at"]');
-	          const balanceInput = form.querySelector('input[name="balance"]');
-	          const noteInput = form.querySelector('input[name="note"]');
-	          if (asOfAtInput && anchorAt) asOfAtInput.value = anchorAt;
-	          if (balanceInput) balanceInput.value = centsToAmountInput(balanceCents);
-	          if (noteInput) noteInput.value = note;
-	        }
+          const asOfAtInput = form.querySelector('input[name="as_of_at"]');
+          const balanceInput = form.querySelector('input[name="balance"]');
+          const noteInput = form.querySelector('input[name="note"]');
+          if (asOfAtInput && anchorAt) asOfAtInput.value = anchorAt;
+          if (balanceInput) balanceInput.value = centsToAmountInput(balanceCents);
+          if (noteInput) noteInput.value = note;
+        }
         openDialog(modal);
         window.setTimeout(() => {
           const first = modal?.querySelector(
@@ -343,10 +364,33 @@
     });
   });
 
+  // Check for filter chip overflow and add indicator class
+  function checkFilterChipOverflow() {
+    document.querySelectorAll('.transactions-filter-chips').forEach(chips => {
+      // Skip dashboard filter chips (they wrap)
+      if (chips.closest('#dashboard-filter-card')) return;
+
+      const hasOverflow = chips.scrollWidth > chips.clientWidth;
+      chips.classList.toggle('has-overflow', hasOverflow);
+    });
+  }
+
+
+
+  // Run on load and after HTMX swaps
+  document.addEventListener("DOMContentLoaded", () => {
+    checkFilterChipOverflow();
+  });
+
+  window.addEventListener('resize', () => {
+    checkFilterChipOverflow();
+  });
+
   document.addEventListener("htmx:afterSwap", () => {
     applyTheme(getPreferredTheme());
     syncNavPeriodLinks();
     reserveScrollbarSpace();
+    checkFilterChipOverflow();
     const navMobile = document.querySelector(".nav-mobile");
     const menuToggle = document.querySelector(".mobile-menu-toggle");
     navMobile?.classList.remove("is-open");

@@ -24,7 +24,8 @@
             <div class="card" data-elevation="0">
                 <div class="card-body space-y-1">
                     <p class="metric-eyebrow">Non-midnight times</p>
-                    <p class="font-semibold text-slate-800 dark:text-slate-100">{{ preview.non_midnight_transaction_times }}</p>
+                    <p class="font-semibold text-slate-800 dark:text-slate-100">{{
+                        preview.non_midnight_transaction_times }}</p>
                 </div>
             </div>
         </div>
@@ -37,10 +38,7 @@
         {% endif %}
     </div>
 
-    <form hx-post="/admin/import-sqlite/commit"
-          hx-target="#sqlite-status"
-          hx-swap="innerHTML"
-          class="space-y-4">
+    <form hx-post="/admin/import-sqlite/commit" hx-target="#sqlite-status" hx-swap="innerHTML" class="space-y-4">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="token" value="{{ token }}">
         <input type="hidden" name="mapping_count" value="{{ preview.mapping_rows|length }}">
@@ -50,7 +48,8 @@
                 <h4 class="font-semibold text-slate-800 dark:text-slate-100">Options</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                        <input type="checkbox" name="import_recurring_rules" {% if preview.recurring_count %}checked{% endif %}>
+                        <input type="checkbox" name="import_recurring_rules" {% if preview.recurring_count %}checked{%
+                            endif %}>
                         Import recurring rules
                     </label>
                     <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
@@ -62,17 +61,20 @@
                         Link “(Recurring)” transactions to rules
                     </label>
                     <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                        <input type="checkbox" name="preserve_time_in_note" {% if preview.non_midnight_transaction_times %}checked{% endif %}>
+                        <input type="checkbox" name="preserve_time_in_note" {% if preview.non_midnight_transaction_times
+                            %}checked{% endif %}>
                         Append time-of-day to note (if present)
                     </label>
                 </div>
-                <p class="text-xs text-slate-500 dark:text-slate-400">Re-running this import can create duplicates for non-recurring transactions.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Re-running this import can create duplicates for
+                    non-recurring transactions.</p>
             </div>
         </div>
 
         <div class="space-y-2">
             <h4 class="font-semibold text-slate-800 dark:text-slate-100">Category mapping</h4>
-            <p class="text-sm text-slate-500 dark:text-slate-400">Each legacy category is mapped per transaction type (income/expense).</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Each legacy category is mapped per transaction type
+                (income/expense).</p>
         </div>
 
         <div class="overflow-x-auto rounded-xl border border-border">
@@ -86,7 +88,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                {% for row in preview.mapping_rows %}
+                    {% for row in preview.mapping_rows %}
                     <tr>
                         <td class="capitalize">{{ row.legacy_type.value }}</td>
                         <td>{{ row.legacy_category }}</td>
@@ -94,7 +96,7 @@
                         <td>
                             <input type="hidden" name="legacy_type_{{ row.idx }}" value="{{ row.legacy_type.value }}">
                             <input type="hidden" name="legacy_category_{{ row.idx }}" value="{{ row.legacy_category }}">
-                            <select class="input" name="target_{{ row.idx }}">
+                            <select class="select" name="target_{{ row.idx }}">
                                 <option value="discard">
                                     Discard all: {{ row.legacy_category }}
                                 </option>
@@ -102,19 +104,21 @@
                                     Create new: {{ row.legacy_category }}
                                 </option>
                                 {% for cat in categories %}
-                                    {% if cat.type == row.legacy_type %}
-                                    <option value="existing:{{ cat.id }}" {% if row.suggested_category_id == cat.id %}selected{% endif %}>
-                                        Map to: {{ cat.name }}
-                                    </option>
-                                    {% endif %}
+                                {% if cat.type == row.legacy_type %}
+                                <option value="existing:{{ cat.id }}" {% if row.suggested_category_id==cat.id
+                                    %}selected{% endif %}>
+                                    Map to: {{ cat.name }}
+                                </option>
+                                {% endif %}
                                 {% endfor %}
                             </select>
                             {% if row.suggested_category_name %}
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Suggested match: {{ row.suggested_category_name }}</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Suggested match: {{
+                                row.suggested_category_name }}</p>
                             {% endif %}
                         </td>
                     </tr>
-                {% endfor %}
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -137,7 +141,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                {% for r in preview.recurring_rows %}
+                    {% for r in preview.recurring_rows %}
                     <tr>
                         <td>{{ r.description }}</td>
                         <td class="capitalize">{{ r.legacy_type.value }}</td>
@@ -147,7 +151,7 @@
                         <td>{{ r.recurrence_type }} / {{ r.interval }}</td>
                         <td>{{ r.computed_next_occurrence or "—" }}</td>
                     </tr>
-                {% endfor %}
+                    {% endfor %}
                 </tbody>
             </table>
         </div>

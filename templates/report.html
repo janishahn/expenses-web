@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="utf-8">
-    <title>Expense Report - {{ period.start }} to {{ period.end }}</title>
+    <title>Expense Report - {{ period.start|eurodate }} to {{ period.end|eurodate }}</title>
 </head>
+
 <body class="report">
     <header class="header">
         <div class="header-top">
             <div>
                 <div class="title">Expense Report</div>
                 <div class="subtitle">
-                    {{ period.start }} — {{ period.end }}
+                    {{ period.start|eurodate }} — {{ period.end|eurodate }}
                     {% if options.transaction_type or options.category_ids %}
                     <span class="cell-muted">· Filtered</span>
                     {% endif %}
@@ -18,7 +20,7 @@
             </div>
             <div class="meta">
                 {% if generated_at %}
-                Generated {{ generated_at.strftime("%Y-%m-%d %H:%M") }}
+                Generated {{ generated_at|eurodatetime }}
                 {% endif %}
                 {% if app_version and app_version != "unknown" %}
                 <div>v{{ app_version }}</div>
@@ -64,15 +66,16 @@
             <div class="col">
                 <div class="bars">
                     {% for cat in category_breakdown %}
-                        {% set color = colors[loop.index0 % colors|length] %}
-                        <div class="bar-row">
-                            <span class="swatch" style="background: {{ color }};"></span>
-                            <span class="bar-name">{{ cat.name }}</span>
-                            <div class="bar-track" aria-hidden="true">
-                                <div class="bar-fill" style="width: {{ "%.1f"|format(cat.percent) }}%; background: {{ color }};"></div>
-                            </div>
-                            <span class="bar-pct">{{ "%.1f"|format(cat.percent) }}%</span>
+                    {% set color = colors[loop.index0 % colors|length] %}
+                    <div class="bar-row">
+                        <span class="swatch" style="background: {{ color }};"></span>
+                        <span class="bar-name">{{ cat.name }}</span>
+                        <div class="bar-track" aria-hidden="true">
+                            <div class="bar-fill" style="width: {{ " %.1f"|format(cat.percent) }}%; background: {{ color
+                                }};"></div>
                         </div>
+                        <span class="bar-pct">{{ "%.1f"|format(cat.percent) }}%</span>
+                    </div>
                     {% endfor %}
                 </div>
             </div>
@@ -133,12 +136,18 @@
             {% set chart_width = 600 %}
             {% set chart_height = 200 %}
             {% set denom = (trend|length - 1) if trend|length > 1 else 1 %}
-            <polyline points="{% for point in trend %}{{ padding + (loop.index0 * chart_width / denom) }},{{ padding + chart_height - (point.amount_cents / max_amount * chart_height) }}{% if not loop.last %} {% endif %}{% endfor %}" fill="none" stroke="#2563eb" stroke-width="2"/>
+            <polyline
+                points="{% for point in trend %}{{ padding + (loop.index0 * chart_width / denom) }},{{ padding + chart_height - (point.amount_cents / max_amount * chart_height) }}{% if not loop.last %} {% endif %}{% endfor %}"
+                fill="none" stroke="#2563eb" stroke-width="2" />
             {% for point in trend %}
-                <circle cx="{{ padding + (loop.index0 * chart_width / denom) }}" cy="{{ padding + chart_height - (point.amount_cents / max_amount * chart_height) }}" r="3" fill="#2563eb"/>
+            <circle cx="{{ padding + (loop.index0 * chart_width / denom) }}"
+                cy="{{ padding + chart_height - (point.amount_cents / max_amount * chart_height) }}" r="3"
+                fill="#2563eb" />
             {% endfor %}
-            <line x1="{{ padding }}" y1="{{ padding }}" x2="{{ padding }}" y2="{{ padding + chart_height }}" stroke="#333" stroke-width="1"/>
-            <line x1="{{ padding }}" y1="{{ padding + chart_height }}" x2="{{ padding + chart_width }}" y2="{{ padding + chart_height }}" stroke="#333" stroke-width="1"/>
+            <line x1="{{ padding }}" y1="{{ padding }}" x2="{{ padding }}" y2="{{ padding + chart_height }}"
+                stroke="#333" stroke-width="1" />
+            <line x1="{{ padding }}" y1="{{ padding + chart_height }}" x2="{{ padding + chart_width }}"
+                y2="{{ padding + chart_height }}" stroke="#333" stroke-width="1" />
         </svg>
     </section>
     {% endif %}
@@ -148,7 +157,8 @@
         <h2 class="section-title">Transactions <span class="cell-muted">({{ recent_transactions|length }})</span></h2>
         {% if options.show_running_balance and opening_balance_cents is not none %}
         <div class="subtitle" style="margin-top: -1mm; margin-bottom: 2mm;">
-            Opening balance: <span class="{% if opening_balance_cents >= 0 %}positive{% else %}negative{% endif %}">{{ opening_balance_cents|currency(options) }}€</span>
+            Opening balance: <span class="{% if opening_balance_cents >= 0 %}positive{% else %}negative{% endif %}">{{
+                opening_balance_cents|currency(options) }}€</span>
         </div>
         {% endif %}
         <table>
@@ -167,16 +177,18 @@
             <tbody>
                 {% for txn in recent_transactions %}
                 <tr>
-                    <td class="cell-muted">{{ txn.occurred_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td class="cell-muted">{{ txn.occurred_at|eurodatetime }}</td>
                     <td>
-                        <span class="pill {% if txn.type.value == 'income' %}pill-income{% else %}pill-expense{% endif %}">
+                        <span
+                            class="pill {% if txn.type.value == 'income' %}pill-income{% else %}pill-expense{% endif %}">
                             {{ txn.type.value }}
                         </span>
                     </td>
                     <td>{{ txn.category.name if txn.category else 'N/A' }}</td>
                     <td>{{ txn.note or '' }}</td>
                     <td class="cell-right {% if txn.type.value == 'income' %}positive{% else %}negative{% endif %}">
-                        {% if txn.type.value == 'income' %}+{% else %}-{% endif %}{{ txn.amount_cents|currency(options) }}€
+                        {% if txn.type.value == 'income' %}+{% else %}-{% endif %}{{ txn.amount_cents|currency(options)
+                        }}€
                     </td>
                     {% if options.show_running_balance %}
                     <td class="cell-right {% if txn.running_balance_cents >= 0 %}positive{% else %}negative{% endif %}">
@@ -204,7 +216,8 @@
                     <td>{{ row.name }}</td>
                     <td>{{ row.type.value }}</td>
                     <td class="cell-right {% if row.type.value == 'income' %}positive{% else %}negative{% endif %}">
-                        {% if row.type.value == 'income' %}+{% else %}-{% endif %}{{ row.amount_cents|currency(options) }}€
+                        {% if row.type.value == 'income' %}+{% else %}-{% endif %}{{ row.amount_cents|currency(options)
+                        }}€
                     </td>
                 </tr>
                 {% endfor %}
@@ -234,7 +247,7 @@
                     <td>{{ rule.name or 'Unnamed Rule' }}</td>
                     <td>{{ rule.type.value }}</td>
                     <td>{{ rule.category.name if rule.category else 'N/A' }}</td>
-                    <td>{{ rule.next_occurrence }}</td>
+                    <td>{{ rule.next_occurrence|eurodate }}</td>
                     <td class="cell-right">{{ rule.amount_cents|currency(options) }}€</td>
                     <td>{{ 'Yes' if rule.auto_post else 'No' }}</td>
                 </tr>
@@ -244,4 +257,5 @@
     </section>
     {% endif %}
 </body>
+
 </html>

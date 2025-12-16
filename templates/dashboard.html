@@ -34,8 +34,9 @@
                                 <div class="transactions-filter-chips" aria-label="Applied filters">
                                     <span class="pill" data-dashboard-filter-pill="period">{{ period.slug.replace("_","
                                         ")|title }}</span>
-                                    <span class="pill" data-dashboard-filter-pill="date">{{ period.start }} → {{
-                                        period.end
+                                    <span class="pill" data-dashboard-filter-pill="date">{{ period.start|eurodate }} →
+                                        {{
+                                        period.end|eurodate
                                         }}</span>
                                     <span class="pill" data-dashboard-filter-pill="type">{% if filters.type %}{{
                                         filters.type.value|title }}{% else %}All{% endif %}</span>
@@ -223,9 +224,17 @@
             return "Custom";
         }
 
+        // Format ISO date (YYYY-MM-DD) to European format (DD.MM.YYYY)
+        function formatEuroDate(isoDate) {
+            if (!isoDate) return "";
+            const parts = isoDate.split("-");
+            if (parts.length !== 3) return isoDate;
+            return `${parts[2]}.${parts[1]}.${parts[0]}`;
+        }
+
         function updateSummary(detail) {
             if (summaryPeriod) summaryPeriod.textContent = periodLabel(detail.period);
-            if (summaryDate) summaryDate.textContent = `${detail.start} → ${detail.end}`;
+            if (summaryDate) summaryDate.textContent = `${formatEuroDate(detail.start)} → ${formatEuroDate(detail.end)}`;
             if (summaryType) summaryType.textContent = detail.type ? detail.type[0].toUpperCase() + detail.type.slice(1) : "All";
         }
 

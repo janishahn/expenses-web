@@ -1,0 +1,37 @@
+{% from "macros.html" import icon %}
+<dialog id="category-modal" class="modal">
+    <form id="category-form" method="post" action="/categories" hx-post="/categories" hx-swap="none" hx-trigger="submit"
+        hx-on:htmx:after-request="if(event.detail.successful){ this.reset(); document.getElementById('category-modal')?.close(); window.ui?.showToast('Category created successfully!'); setTimeout(() => window.location.reload(), 300); }"
+        hx-on:htmx:response-error="window.ui?.showToast(window.ui?.httpErrorMessage?.(event.detail.xhr) || 'Unable to create category', 'error')"
+        class="modal-form space-y-6">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="space-y-1">
+            <p class="metric-eyebrow">Taxonomy</p>
+            <div class="flex items-center justify-between">
+                <h3 class="text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">New Category</h3>
+                <button type="button" class="btn btn-ghost btn-icon" data-close-category aria-label="Close">
+                    {{ icon("x", class="icon") }}
+                </button>
+            </div>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Create a new category for organizing your
+                transactions.</p>
+        </div>
+        <div class="separator"></div>
+        <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+            Name
+            <input type="text" name="name" placeholder="e.g., Groceries" class="input" required>
+        </label>
+        <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+            Type
+            <select name="type" class="select">
+                {% for t in TransactionType %}
+                <option value="{{ t.value }}">{{ t.value.title() }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+            <button type="button" class="btn btn-ghost" data-close-category>Cancel</button>
+            <button type="submit" class="btn btn-primary btn-lg">Create Category</button>
+        </div>
+    </form>
+</dialog>

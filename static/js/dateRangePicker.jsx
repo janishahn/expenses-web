@@ -6,6 +6,14 @@ function DateRangePicker({ initialStart, initialEnd, onApply, onExpose }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
+  // Format ISO date (YYYY-MM-DD) to European format (DD.MM.YYYY)
+  const formatEuroDate = (isoDate) => {
+    if (!isoDate) return "";
+    const parts = isoDate.split("-");
+    if (parts.length !== 3) return isoDate;
+    return `${parts[2]}.${parts[1]}.${parts[0]}`;
+  };
+
   useEffect(() => {
     const api = {
       open: () => setOpen(true),
@@ -63,7 +71,7 @@ function DateRangePicker({ initialStart, initialEnd, onApply, onExpose }) {
         onClick={() => setOpen(!open)}
         aria-expanded={open ? "true" : "false"}
       >
-        <span className="tabular text-sm">{start} → {end}</span>
+        <span className="tabular text-sm">{formatEuroDate(start)} → {formatEuroDate(end)}</span>
         <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path d="M6 9l6 6 6-6"></path>
         </svg>

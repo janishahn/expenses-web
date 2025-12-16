@@ -92,7 +92,27 @@ def format_currency(cents: int, options: Optional[dict] = None) -> str:
     return f"{cents / 100:,.0f}".replace(",", " ")
 
 
+def format_eurodate(value) -> str:
+    """Format a date or datetime as DD.MM.YYYY (European format)."""
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%d.%m.%Y")
+    return str(value)
+
+
+def format_eurodatetime(value) -> str:
+    """Format a datetime as DD.MM.YYYY HH:MM (European format)."""
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%d.%m.%Y %H:%M")
+    return str(value)
+
+
 templates.env.filters["currency"] = format_currency
+templates.env.filters["eurodate"] = format_eurodate
+templates.env.filters["eurodatetime"] = format_eurodatetime
 templates.env.globals["math"] = math
 templates.env.globals["TransactionType"] = TransactionType
 templates.env.globals["IntervalUnit"] = IntervalUnit
@@ -541,11 +561,12 @@ async def restore_category(
 def recurring_page(request: Request, db: Session = Depends(get_db)):
     service = RecurringRuleService(db)
     rules = service.list()
+    stats = service.get_statistics()
     categories = CategoryService(db).list_all()
     return render(
         request,
         "recurring.html",
-        {"rules": rules, "categories": categories},
+        {"rules": rules, "categories": categories, "stats": stats},
     )
 
 

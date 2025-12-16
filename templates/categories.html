@@ -1,51 +1,34 @@
 {% extends "base.html" %}
 {% block content %}
-{% set income_categories = categories | selectattr('type.value', 'equalto', 'income') | selectattr('archived_at', 'none') | list %}
-{% set expense_categories = categories | selectattr('type.value', 'equalto', 'expense') | selectattr('archived_at', 'none') | list %}
+{% from "macros.html" import icon %}
+{% set income_categories = categories | selectattr('type.value', 'equalto', 'income') | selectattr('archived_at',
+'none') | list %}
+{% set expense_categories = categories | selectattr('type.value', 'equalto', 'expense') | selectattr('archived_at',
+'none') | list %}
 {% set archived_categories = categories | selectattr('archived_at') | list %}
 <section class="space-y-6">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
             <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Taxonomy</p>
             <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Categories</h1>
-            <p class="text-slate-500 dark:text-slate-400">Usage window: {{ period.start }} → {{ period.end }}</p>
+            <p class="text-slate-500 dark:text-slate-400">Usage window: {{ period.start|eurodate }} → {{
+                period.end|eurodate }}</p>
         </div>
-        <span class="pill">Total {{ categories|length }} categories</span>
+        <div class="flex items-center gap-3">
+            <span class="pill">Total {{ categories|length }} categories</span>
+            <button type="button" class="btn btn-primary categories-add-btn" data-open-category>
+                {{ icon("plus", class="icon") }}
+                <span>Add Category</span>
+            </button>
+        </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <form method="post" action="/categories" class="card shadow-hover space-y-0">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="card-header space-y-1">
-                <p class="metric-eyebrow">Create</p>
-                <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">New Category</h2>
-            </div>
-            <div class="separator"></div>
-            <div class="card-body space-y-4">
-                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                    Name
-                    <input type="text" name="name" placeholder="e.g., Groceries" class="input" required>
-                </label>
-                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
-                    Type
-                    <select name="type" class="select">
-                        {% for t in TransactionType %}
-                        <option value="{{ t.value }}">{{ t.value.title() }}</option>
-                        {% endfor %}
-                    </select>
-                </label>
-            </div>
-            <div class="separator"></div>
-            <div class="card-footer">
-                <button type="submit" class="btn btn-primary btn-lg w-full">Create Category</button>
-            </div>
-        </form>
-
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 categories-grid">
         {% for title, collection, list_key in [
-            ("Income Categories", income_categories, "income"),
-            ("Expense Categories", expense_categories, "expense")
+        ("Income Categories", income_categories, "income"),
+        ("Expense Categories", expense_categories, "expense")
         ] %}
-        <div class="card shadow-hover space-y-0">
+        <div class="card shadow-hover space-y-0 category-list-card">
             <div class="card-header flex items-center justify-between">
                 <div>
                     <p class="metric-eyebrow">{{ "Income" if list_key == "income" else "Expense" }}</p>
@@ -62,32 +45,35 @@
             <div class="separator"></div>
             <div class="card-body divide-y" data-category-list="{{ list_key }}">
                 {% if collection %}
-                    {% for category in collection %}
-                    {% set usage = category_usage.get(category.id, 0) %}
-                    <div class="category-row" data-category-row data-sort-name="{{ category.name|lower }}" data-sort-usage="{{ usage }}">
-                        <div class="category-meta">
-                            <div>
-                                <p class="font-semibold text-slate-800 dark:text-slate-100">{{ category.name }}</p>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">{{ usage }} {{ "use" if usage == 1 else "uses" }} this period</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <span class="badge badge-muted text-xs">Active</span>
-                            <span class="usage-pill text-xs">{{ usage }}</span>
-                            <form hx-post="/categories/{{ category.id }}/archive" hx-swap="none" hx-on::afterRequest="window.location.reload()">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Archive">
-                                    {{ icon("archive", class="icon") }}
-                                </button>
-                            </form>
+                {% for category in collection %}
+                {% set usage = category_usage.get(category.id, 0) %}
+                <div class="category-row" data-category-row data-sort-name="{{ category.name|lower }}"
+                    data-sort-usage="{{ usage }}">
+                    <div class="category-meta">
+                        <div>
+                            <p class="font-semibold text-slate-800 dark:text-slate-100">{{ category.name }}</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ usage }} {{ "use" if usage == 1
+                                else "uses" }} this period</p>
                         </div>
                     </div>
-                    {% endfor %}
+                    <div class="flex items-center gap-2">
+                        <span class="badge badge-muted text-xs">Active</span>
+                        <span class="usage-pill text-xs">{{ usage }}</span>
+                        <form hx-post="/categories/{{ category.id }}/archive" hx-swap="none"
+                            hx-on::afterRequest="window.location.reload()">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Archive">
+                                {{ icon("archive", class="icon") }}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endfor %}
                 {% else %}
-                    <div class="empty-state">
-                        <p class="font-semibold text-slate-700 dark:text-slate-200">No categories yet</p>
-                        <p class="text-sm">Use the form on the left to create your first one.</p>
-                    </div>
+                <div class="empty-state">
+                    <p class="font-semibold text-slate-700 dark:text-slate-200">No categories yet</p>
+                    <p class="text-sm">Tap the + button to create your first one.</p>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -99,7 +85,8 @@
         <div class="card-header flex items-center justify-between">
             <div>
                 <p class="metric-eyebrow">Archive</p>
-                <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Archived Categories</h2>
+                <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Archived Categories
+                </h2>
             </div>
             <span class="badge badge-muted">{{ archived_categories|length }} total</span>
         </div>
@@ -119,9 +106,10 @@
                     <tr>
                         <td>{{ category.name }}</td>
                         <td>{{ category.type.value|title }}</td>
-                        <td>{{ category.archived_at.strftime('%Y-%m-%d') }}</td>
+                        <td>{{ category.archived_at|eurodate }}</td>
                         <td class="text-right">
-                            <form hx-post="/categories/{{ category.id }}/restore" hx-swap="none" hx-on::afterRequest="window.location.reload()">
+                            <form hx-post="/categories/{{ category.id }}/restore" hx-swap="none"
+                                hx-on::afterRequest="window.location.reload()">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Restore category">
                                     {{ icon("rotate-ccw", class="icon") }}
@@ -138,25 +126,34 @@
 </section>
 
 <script>
-(function () {
-const sortControls = document.querySelectorAll("[data-sort-control]");
-sortControls.forEach((select) => {
-    const key = select.dataset.sortControl;
-    const list = document.querySelector(`[data-category-list="${key}"]`);
-    select.addEventListener("change", () => {
-        if (!list) return;
-        const rows = Array.from(list.querySelectorAll("[data-category-row]"));
-        const mode = select.value;
-        rows.sort((a, b) => {
-            if (mode === "usage") {
-                return Number(b.dataset.sortUsage) - Number(a.dataset.sortUsage);
-            }
-            return a.dataset.sortName.localeCompare(b.dataset.sortName);
+    (function () {
+        const sortControls = document.querySelectorAll("[data-sort-control]");
+        sortControls.forEach((select) => {
+            const key = select.dataset.sortControl;
+            const list = document.querySelector(`[data-category-list="${key}"]`);
+            select.addEventListener("change", () => {
+                if (!list) return;
+                const rows = Array.from(list.querySelectorAll("[data-category-row]"));
+                const mode = select.value;
+                rows.sort((a, b) => {
+                    if (mode === "usage") {
+                        return Number(b.dataset.sortUsage) - Number(a.dataset.sortUsage);
+                    }
+                    return a.dataset.sortName.localeCompare(b.dataset.sortName);
+                });
+                rows.forEach((row) => list.appendChild(row));
+            });
+            select.dispatchEvent(new Event("change"));
         });
-        rows.forEach((row) => list.appendChild(row));
-    });
-    select.dispatchEvent(new Event("change"));
-});
-})();
+    })();
 </script>
+
+<!-- FAB for mobile category creation -->
+<div class="fab categories-fab md:right-8">
+    <button type="button" data-open-category data-tooltip="Add category">
+        <i data-lucide="plus" class="icon"></i>
+    </button>
+</div>
+
+{% include "components/category_modal.html" %}
 {% endblock %}
