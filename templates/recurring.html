@@ -149,8 +149,9 @@
                         <td class="recurring-td-amount">
                             <span
                                 class="recurring-amount tabular {% if rule.type.value == 'income' %}text-emerald-500{% else %}text-rose-500{% endif %}">
+                                {% set currency_symbol = "€" if rule.currency_code.value == "EUR" else "$" %}
                                 {% if rule.type.value == 'income' %}+{% else %}-{% endif %}{{ rule.amount_cents|currency
-                                }} €
+                                }} {{ currency_symbol }}
                             </span>
                         </td>
                         <td class="recurring-td-interval">
@@ -181,6 +182,7 @@
                                 <button type="button" class="btn btn-ghost btn-icon btn-sm" data-rule-edit
                                     data-rule-id="{{ rule.id }}" data-rule-name="{{ rule.name or '' }}"
                                     data-rule-type="{{ rule.type.value }}"
+                                    data-rule-currency="{{ rule.currency_code.value }}"
                                     data-rule-amount="{{ '%.2f' % (rule.amount_cents / 100) }}"
                                     data-rule-category="{{ rule.category_id }}" data-rule-start="{{ rule.anchor_date }}"
                                     data-rule-interval-unit="{{ rule.interval_unit.value }}"
@@ -286,7 +288,13 @@
             </label>
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 Amount
-                <input type="text" name="amount" class="input" required placeholder="0.00">
+                <div class="flex items-center gap-2">
+                    <select name="currency_code" id="rule-currency" class="select w-28" aria-label="Currency">
+                        <option value="EUR">EUR (€)</option>
+                        <option value="USD">USD ($)</option>
+                    </select>
+                    <input type="text" name="amount" class="input flex-1" required placeholder="0.00">
+                </div>
             </label>
             <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                 Category
@@ -396,6 +404,7 @@
         const nextOccurrenceHidden = document.getElementById("rule-next-occurrence");
         const typeSelect = ruleForm.elements["type"];
         const categorySelect = document.getElementById("rule-category-select");
+        const currencySelect = ruleForm.elements["currency_code"];
 
         // Store all category options for filtering
         const allCategoryOptions = Array.from(categorySelect.options).map(opt => ({
@@ -529,6 +538,7 @@
             nextOccurrenceHidden.value = "";
             monthDayPolicySection.classList.add("hidden");
             previewDates.innerHTML = '<span class="text-slate-400 italic">Enter a start date to see preview</span>';
+            if (currencySelect) currencySelect.value = "EUR";
 
             if (mode === "edit") {
                 ruleForm.action = `/recurring/${data.id}`;
@@ -536,6 +546,7 @@
                 ruleForm.elements["type"].value = data.type;
                 // Filter categories AFTER setting type, BEFORE setting category
                 filterCategories();
+                if (currencySelect) currencySelect.value = data.currency || "EUR";
                 ruleForm.elements["amount"].value = data.amount;
                 ruleForm.elements["category_id"].value = data.category;
                 ruleForm.elements["start_date"].value = data.start || "";
@@ -570,6 +581,7 @@
                     id: btn.dataset.ruleId,
                     name: btn.dataset.ruleName,
                     type: btn.dataset.ruleType,
+                    currency: btn.dataset.ruleCurrency,
                     amount: btn.dataset.ruleAmount,
                     category: btn.dataset.ruleCategory,
                     start: btn.dataset.ruleStart,

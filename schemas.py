@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from models import IntervalUnit, MonthDayPolicy, TransactionType
+from models import CurrencyCode, IntervalUnit, MonthDayPolicy, TransactionType
 
 
 class ReportOptions(BaseModel):
@@ -50,6 +50,7 @@ class TransactionIn(BaseModel):
 class RecurringRuleIn(BaseModel):
     name: Optional[str]
     type: TransactionType
+    currency_code: CurrencyCode = CurrencyCode.eur
     amount_cents: int = Field(..., ge=0)
     category_id: int
     anchor_date: date

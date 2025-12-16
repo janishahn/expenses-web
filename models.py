@@ -25,6 +25,18 @@ class TransactionType(str, Enum):
     expense = "expense"
 
 
+class CurrencyCode(str, Enum):
+    eur = "EUR"
+    usd = "USD"
+
+
+CURRENCY_CODE_ENUM = SAEnum(
+    CurrencyCode,
+    name="currencycode",
+    values_callable=lambda enum_cls: [member.value for member in enum_cls],
+)
+
+
 class IntervalUnit(str, Enum):
     day = "day"
     week = "week"
@@ -83,6 +95,14 @@ class Transaction(Base, TimestampMixin):
         SAEnum(TransactionType), nullable=False
     )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_currency_code: Mapped[Optional[CurrencyCode]] = mapped_column(
+        CURRENCY_CODE_ENUM
+    )
+    source_amount_cents: Mapped[Optional[int]] = mapped_column(Integer)
+    fx_rate_micros: Mapped[Optional[int]] = mapped_column(Integer)
+    fx_rate_date: Mapped[Optional[date]] = mapped_column(Date)
+    fx_provider: Mapped[Optional[str]] = mapped_column(String(40))
+    fx_fetched_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     category_id: Mapped[int] = mapped_column(
         ForeignKey("categories.id"), nullable=False
     )
@@ -122,6 +142,9 @@ class RecurringRule(Base, TimestampMixin):
     name: Mapped[Optional[str]] = mapped_column(String(120))
     type: Mapped[TransactionType] = mapped_column(
         SAEnum(TransactionType), nullable=False
+    )
+    currency_code: Mapped[CurrencyCode] = mapped_column(
+        CURRENCY_CODE_ENUM, nullable=False, default=CurrencyCode.eur
     )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     category_id: Mapped[int] = mapped_column(

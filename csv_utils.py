@@ -56,7 +56,7 @@ def parse_date(value: str):
 
 
 def parse_amount(value: str, *, allow_negative: bool = False) -> int:
-    clean = value.strip().replace("€", "").replace(" ", "")
+    clean = value.strip().replace("€", "").replace("$", "").replace(" ", "")
     clean = clean.replace(",", ".")
     if clean.count(".") > 1:
         parts = clean.split(".")

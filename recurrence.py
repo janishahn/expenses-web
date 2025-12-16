@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from config import get_settings
 from models import (
+    CurrencyCode,
     IntervalUnit,
     MonthDayPolicy,
     RecurringRule,
@@ -114,7 +115,10 @@ class RecurringEngine:
             if rule.end_date and rule.next_occurrence > rule.end_date:
                 break
             occurrence_date = rule.next_occurrence
-            posted = self._post_occurrence(rule, occurrence_date)
+            try:
+                posted = self._post_occurrence(rule, occurrence_date)
+            except Exception:
+                break
             next_date = calculate_next_date(rule, occurrence_date)
             rule.next_occurrence = next_date
             if not posted and occurrence_date == next_date:
@@ -142,6 +146,7 @@ class RecurringEngine:
 
     def _post_occurrence(self, rule: RecurringRule, occurrence_date: date) -> bool:
         from services import update_monthly_rollup
+        from fx_rates import FxRateService
 
         exists_stmt = (
             select(Transaction.id)
@@ -156,12 +161,38 @@ class RecurringEngine:
         if existing:
             return False
 
+        amount_eur_cents = rule.amount_cents
+        source_currency_code = None
+        source_amount_cents = None
+        fx_rate_micros = None
+        fx_rate_date = None
+        fx_provider = None
+        fx_fetched_at = None
+
+        if rule.currency_code == CurrencyCode.usd:
+            fx = FxRateService()
+            amount_eur_cents, quote = fx.convert_usd_cents_to_eur_cents(
+                rule.amount_cents, occurrence_date
+            )
+            source_currency_code = CurrencyCode.usd
+            source_amount_cents = rule.amount_cents
+            fx_rate_micros = FxRateService.rate_to_micros(quote.rate)
+            fx_rate_date = quote.rate_date
+            fx_provider = quote.provider
+            fx_fetched_at = quote.fetched_at
+
         txn = Transaction(
             user_id=rule.user_id,
             date=occurrence_date,
             occurred_at=datetime.combine(occurrence_date, time(12, 0)),
             type=rule.type,
-            amount_cents=rule.amount_cents,
+            amount_cents=amount_eur_cents,
+            source_currency_code=source_currency_code,
+            source_amount_cents=source_amount_cents,
+            fx_rate_micros=fx_rate_micros,
+            fx_rate_date=fx_rate_date,
+            fx_provider=fx_provider,
+            fx_fetched_at=fx_fetched_at,
             category_id=rule.category_id,
             origin_rule_id=rule.id,
             occurrence_date=occurrence_date,
@@ -173,7 +204,7 @@ class RecurringEngine:
             rule.user_id,
             occurrence_date,
             rule.type,
-            rule.amount_cents,
+            amount_eur_cents,
             increment=True,
         )
         return True

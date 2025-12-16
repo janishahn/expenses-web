@@ -26,6 +26,7 @@ from database import SessionLocal
 from legacy_sqlite_import import LegacySQLiteImportService
 from models import (
     Category,
+    CurrencyCode,
     IntervalUnit,
     MonthDayPolicy,
     Transaction,
@@ -192,7 +193,7 @@ def render(request: Request, template: str, context: dict[str, object]) -> HTMLR
 def recurring_payload_from_form(form) -> RecurringRuleIn:
     # Start date is the user-facing field (renamed from anchor_date)
     start_date = date.fromisoformat(form["start_date"])
-    
+
     # For new rules, next_occurrence = start_date
     # For edits, next_occurrence may be provided (hidden field)
     next_occurrence_raw = form.get("next_occurrence")
@@ -200,10 +201,11 @@ def recurring_payload_from_form(form) -> RecurringRuleIn:
         next_occurrence = date.fromisoformat(next_occurrence_raw)
     else:
         next_occurrence = start_date
-    
+
     return RecurringRuleIn(
         name=form.get("name"),
         type=TransactionType(form["type"]),
+        currency_code=CurrencyCode(form.get("currency_code", "EUR")),
         amount_cents=parse_amount(form["amount"]),
         category_id=int(form["category_id"]),
         anchor_date=start_date,  # anchor_date = start_date internally
@@ -678,45 +680,44 @@ async def preview_recurring_occurrences(request: Request):
     Returns next N occurrences for a recurring rule configuration.
     Used for live preview in the form.
     """
-    from models import RecurringRule
     from recurrence import calculate_next_date
-    
+
     try:
         data = await request.json()
     except Exception:
         return {"occurrences": [], "error": "Invalid JSON"}
-    
+
     start_date_str = data.get("start_date")
     interval_unit_str = data.get("interval_unit", "month")
     interval_count = int(data.get("interval_count", 1) or 1)
     month_day_policy_str = data.get("month_day_policy", "snap_to_end")
     skip_weekends = data.get("skip_weekends", False)
-    
+
     if not start_date_str:
         return {"occurrences": [], "error": "start_date required"}
-    
+
     try:
         start_date = date.fromisoformat(start_date_str)
         interval_unit = IntervalUnit(interval_unit_str)
         month_day_policy = MonthDayPolicy(month_day_policy_str)
     except (ValueError, KeyError) as e:
         return {"occurrences": [], "error": str(e)}
-    
+
     # Create a temporary rule-like object for calculation
     class TempRule:
         pass
-    
+
     rule = TempRule()
     rule.anchor_date = start_date
     rule.interval_unit = interval_unit
     rule.interval_count = interval_count
     rule.month_day_policy = month_day_policy
     rule.skip_weekends = skip_weekends
-    
+
     # Calculate next 4 occurrences
     occurrences = [start_date.isoformat()]
     current_date = start_date
-    
+
     for _ in range(3):
         try:
             next_date = calculate_next_date(rule, current_date)
@@ -724,7 +725,7 @@ async def preview_recurring_occurrences(request: Request):
             current_date = next_date
         except Exception:
             break
-    
+
     return {"occurrences": occurrences}
 
 

@@ -11,6 +11,7 @@ from models import (
     BalanceAnchor,
     Budget,
     Category,
+    CurrencyCode,
     MonthlyRollup,
     RecurringRule,
     Transaction,
@@ -851,15 +852,24 @@ class RecurringRuleService:
 
     def get_statistics(self) -> dict[str, object]:
         """Calculate statistics for recurring rules, normalized to monthly amounts."""
+        from fx_rates import FxRateService
         from models import IntervalUnit
+        from recurrence import local_today
 
         rules = self.list()
+        fx = FxRateService()
+        today = local_today()
 
         def monthly_amount(rule: RecurringRule) -> int:
             """Convert a rule's amount to monthly equivalent in cents."""
             interval = rule.interval_unit
             count = rule.interval_count
             amount = rule.amount_cents
+            if rule.currency_code == CurrencyCode.usd:
+                try:
+                    amount, _quote = fx.convert_usd_cents_to_eur_cents(amount, today)
+                except Exception:
+                    amount = 0
 
             if interval == IntervalUnit.day:
                 # Approximate 30.44 days per month
@@ -940,6 +950,7 @@ class RecurringRuleService:
             user_id=self.user_id,
             name=data.name,
             type=data.type,
+            currency_code=data.currency_code,
             amount_cents=data.amount_cents,
             category_id=data.category_id,
             anchor_date=data.anchor_date,
