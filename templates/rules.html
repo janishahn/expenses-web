@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block content %}
+{% from "macros.html" import icon %}
+
+<section class="space-y-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+            <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Automation</p>
+            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Rules</h1>
+            <p class="text-slate-500 dark:text-slate-400">Auto-categorize and tag transactions based on note patterns.</p>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg" data-open-rule>Create rule</button>
+    </div>
+
+    <div id="rules-list"
+         hx-get="/rules"
+         hx-trigger="rules-updated from:body"
+         hx-select="#rules-list"
+         hx-target="#rules-list"
+         hx-swap="outerHTML">
+        {% if rules %}
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {% for rule in rules %}
+            <article class="card shadow-hover" id="rule-card-{{ rule.id }}">
+                <div class="card-body space-y-3">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="space-y-1">
+                            <p class="font-semibold text-slate-800 dark:text-slate-100">{{ rule.name }}</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">
+                                Priority {{ rule.priority }} ·
+                                {% if rule.enabled %}Enabled{% else %}Disabled{% endif %}
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <button type="button"
+                                    class="btn btn-ghost btn-icon"
+                                    data-rule-edit
+                                    data-rule-id="{{ rule.id }}"
+                                    data-rule-name="{{ rule.name }}"
+                                    data-rule-enabled="{{ 'true' if rule.enabled else 'false' }}"
+                                    data-rule-priority="{{ rule.priority }}"
+                                    data-rule-match-type="{{ rule.match_type.value }}"
+                                    data-rule-match-value="{{ rule.match_value }}"
+                                    data-rule-tx-type="{{ rule.transaction_type.value if rule.transaction_type else '' }}"
+                                    data-rule-min="{{ '%.2f' % (rule.min_amount_cents / 100) if rule.min_amount_cents is not none else '' }}"
+                                    data-rule-max="{{ '%.2f' % (rule.max_amount_cents / 100) if rule.max_amount_cents is not none else '' }}"
+                                    data-rule-category="{{ rule.set_category_id or '' }}"
+                                    data-rule-add-tags="{{ rule.add_tags_json or '[]' }}"
+                                    data-rule-exclude-tag="{{ rule.budget_exclude_tag_id or '' }}"
+                                    data-tooltip="Edit rule">
+                                {{ icon("pencil", class="icon") }}
+                            </button>
+                            <button type="button"
+                                    class="btn btn-ghost btn-icon"
+                                    hx-post="/rules/{{ rule.id }}/toggle"
+                                    hx-vals='{"csrf_token":"{{ csrf_token() }}","enabled":"{{ 'false' if rule.enabled else 'true' }}"}'
+                                    hx-swap="none"
+                                    data-tooltip="{{ 'Disable' if rule.enabled else 'Enable' }}">
+                                {% if rule.enabled %}
+                                {{ icon("toggle-right", class="icon") }}
+                                {% else %}
+                                {{ icon("toggle-left", class="icon") }}
+                                {% endif %}
+                            </button>
+                            <button type="button"
+                                    class="btn btn-ghost btn-icon"
+                                    hx-post="/rules/{{ rule.id }}/delete"
+                                    hx-vals='{"csrf_token":"{{ csrf_token() }}"}'
+                                    hx-confirm="Delete this rule?"
+                                    hx-swap="none"
+                                    data-tooltip="Delete rule">
+                                {{ icon("trash-2", class="icon") }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="text-sm text-slate-600 dark:text-slate-300 space-y-1">
+                        <p>
+                            <span class="pill">IF</span>
+                            Note {{ rule.match_type.value.replace('_',' ') }} “{{ rule.match_value }}”
+                            {% if rule.transaction_type %}· Type {{ rule.transaction_type.value }}{% endif %}
+                            {% if rule.min_amount_cents is not none or rule.max_amount_cents is not none %}
+                            · Amount
+                            {% if rule.min_amount_cents is not none %}≥ {{ rule.min_amount_cents|currency }} €{% endif %}
+                            {% if rule.max_amount_cents is not none %}≤ {{ rule.max_amount_cents|currency }} €{% endif %}
+                            {% endif %}
+                        </p>
+                        <p>
+                            <span class="pill">THEN</span>
+                            {% if rule.set_category %}
+                            Category → <span class="font-semibold">{{ rule.set_category.name }}</span>
+                            {% else %}
+                            Category unchanged
+                            {% endif %}
+                            {% if rule.budget_exclude_tag %}
+                            · Add tag <span class="font-semibold">{{ rule.budget_exclude_tag.name }}</span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="card shadow-hover text-center p-10 space-y-3">
+            {{ icon("sparkles", class="mx-auto icon") }}
+            <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100">No rules yet</h2>
+            <p class="text-slate-500 dark:text-slate-400">Create a rule to auto-categorize expenses like “Rent” or “Netflix”.</p>
+            <button type="button" class="btn btn-primary" data-open-rule>Create your first rule</button>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+{% include "components/rule_modal.html" %}
+
+<script>
+(function () {
+    const modal = document.getElementById("rule-modal");
+    const form = document.getElementById("rule-form");
+    const title = document.getElementById("rule-modal-title");
+    const submit = document.getElementById("rule-submit");
+    const preview = document.getElementById("rule-preview");
+
+    if (!modal || !form) return;
+
+    function openCreate() {
+        form.reset();
+        form.action = "/rules";
+        title.textContent = "Create rule";
+        submit.textContent = "Save rule";
+        if (preview) preview.innerHTML = "";
+        modal.showModal();
+    }
+
+    function openEdit(btn) {
+        form.reset();
+        const id = btn.dataset.ruleId;
+        form.action = `/rules/${id}`;
+        title.textContent = "Edit rule";
+        submit.textContent = "Update rule";
+        form.elements["name"].value = btn.dataset.ruleName || "";
+        form.elements["enabled"].checked = btn.dataset.ruleEnabled === "true";
+        form.elements["priority"].value = btn.dataset.rulePriority || "100";
+        form.elements["match_type"].value = btn.dataset.ruleMatchType || "contains";
+        form.elements["match_value"].value = btn.dataset.ruleMatchValue || "";
+        form.elements["transaction_type"].value = btn.dataset.ruleTxType || "";
+        form.elements["min_amount"].value = btn.dataset.ruleMin || "";
+        form.elements["max_amount"].value = btn.dataset.ruleMax || "";
+        form.elements["set_category_id"].value = btn.dataset.ruleCategory || "";
+        form.elements["budget_exclude_tag_id"].value = btn.dataset.ruleExcludeTag || "";
+
+        try {
+            const tags = JSON.parse(btn.dataset.ruleAddTags || "[]");
+            const hidden = form.querySelector('input[name="add_tags"]');
+            if (hidden) {
+                hidden.value = Array.isArray(tags) ? tags.join(",") : "";
+            }
+        } catch (_) {
+        }
+
+        if (preview) preview.innerHTML = "";
+        modal.showModal();
+    }
+
+    document.querySelectorAll("[data-open-rule]").forEach((btn) => {
+        btn.addEventListener("click", openCreate);
+    });
+
+    document.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-rule-edit]");
+        if (!btn) return;
+        event.preventDefault();
+        openEdit(btn);
+    });
+})();
+</script>
+
+{% endblock %}

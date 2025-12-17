@@ -17,6 +17,9 @@
                 <div class="flex-1">
                     <p class="font-semibold text-slate-800 dark:text-slate-100">
                         {{ txn.note or (txn.category.name if txn.category else "Untitled") }}
+                        {% for tag in txn.tags %}
+                        <span class="ml-1 inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">{{ tag.name }}</span>
+                        {% endfor %}
                     </p>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
                         {{ txn.date|eurodate }} • {{ txn.category.name if txn.category else "Uncategorized" }}

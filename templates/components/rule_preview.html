@@ -1,0 +1,48 @@
+<div class="card shadow-hover mt-4">
+    <div class="card-body space-y-2">
+        <div class="flex items-center justify-between gap-3">
+            <p class="font-semibold text-slate-800 dark:text-slate-100">Preview</p>
+            <span class="pill">{{ matches_count }} match{{ '' if matches_count == 1 else 'es' }} in recent activity</span>
+        </div>
+        {% if sample %}
+        <div class="overflow-x-auto rounded-xl border border-border">
+            <table class="table text-sm">
+                <thead>
+                    <tr>
+                        <th>Note</th>
+                        <th>Type</th>
+                        <th class="text-right">Amount</th>
+                        <th>Category</th>
+                        <th>Tags to add</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in sample %}
+                    <tr>
+                        <td class="font-medium text-slate-800 dark:text-slate-100">{{ row.note }}</td>
+                        <td class="capitalize">{{ row.type }}</td>
+                        <td class="text-right tabular">{{ row.amount_cents|currency }} €</td>
+                        <td>
+                            {% if row.before_category != row.after_category %}
+                            <span class="pill">{{ row.before_category }}</span> → <span class="pill">{{ row.after_category }}</span>
+                            {% else %}
+                            {{ row.before_category }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.add_tags %}
+                            {{ row.add_tags|join(", ") }}
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500 dark:text-slate-400">No recent transactions match this rule.</p>
+        {% endif %}
+    </div>
+</div>

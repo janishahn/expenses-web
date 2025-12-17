@@ -51,6 +51,15 @@
             Description
             <input type="text" name="note" placeholder="e.g., Lunch with Alex" class="input" required>
         </label>
+        <div class="space-y-1 tag-input-container" data-available-tags='{{ tags|tojson|safe }}'>
+            <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">Tags</span>
+            <input type="hidden" name="tags" value="">
+            <div class="tag-input-wrapper">
+                <div class="tag-chips"></div>
+                <input type="text" class="tag-text-input" placeholder="Add tags...">
+            </div>
+            <div class="tag-suggestions"></div>
+        </div>
         <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
             <button type="button" class="btn btn-ghost" data-close-transaction>Cancel</button>
             <button type="submit" class="btn btn-primary btn-lg">Add Transaction</button>

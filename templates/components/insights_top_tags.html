@@ -1,0 +1,42 @@
+{% from "macros.html" import icon %}
+<div id="insights-top-tags"
+     hx-get="/components/insights/top-tags"
+     hx-trigger="filtersChanged from:#insights-filters"
+     hx-include="#insights-filter-form"
+     hx-swap="outerHTML"
+     class="card shadow-hover">
+    <div class="card-header flex items-center justify-between">
+        <div>
+            <p class="metric-eyebrow">Tags</p>
+            <h3 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Top tags</h3>
+        </div>
+        <a href="/tags" class="btn btn-secondary btn-sm">Manage</a>
+    </div>
+    <div class="separator"></div>
+    <div class="card-body space-y-3">
+        {% if top_tags %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {% for t in top_tags %}
+            <a class="p-4 rounded-xl border border-border bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+               href="/tags/{{ t.id }}?period={{ period.slug }}&start={{ period.start }}&end={{ period.end }}">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-800 dark:text-slate-100 truncate">{{ t.name }}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Open tag dashboard</p>
+                    </div>
+                    <p class="tabular font-semibold text-rose-500">{{ t.amount_cents|currency }} €</p>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500 dark:text-slate-400">
+            {% if request.query_params.get('tag') %}
+            Tag filter is active, so “top tags” is hidden.
+            {% else %}
+            No tagged transactions in this period.
+            {% endif %}
+        </p>
+        {% endif %}
+    </div>
+</div>

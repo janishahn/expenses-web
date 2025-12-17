@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="space-y-6">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="space-y-2">
+            <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Contexts</p>
+            <h1 class="text-3xl font-semibold leading-tight tracking-tight text-slate-800 dark:text-slate-100">Tags</h1>
+            <p class="text-slate-500 leading-relaxed dark:text-slate-400">Manage your tracking labels and contexts.</p>
+        </div>
+        <button type="button" class="btn btn-primary" onclick="document.getElementById('create-tag-modal').showModal()">
+            {{ icon("plus", class="icon mr-2") }} Create Tag
+        </button>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {% for tag in tags %}
+        <a href="/tags/{{ tag.id }}" class="card shadow-hover p-4 flex items-center justify-between group">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                    {{ icon("tag", class="icon") }}
+                </div>
+                <span class="font-medium text-slate-700 dark:text-slate-200">{{ tag.name }}</span>
+            </div>
+            {{ icon("chevron-right", class="icon text-slate-300 dark:text-slate-600 group-hover:text-primary transition-colors") }}
+        </a>
+        {% else %}
+        <div class="col-span-full text-center py-12 text-slate-500">
+            <p>No tags yet. Add tags when creating transactions!</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<dialog id="create-tag-modal" class="modal">
+    <form method="post" action="/tags" class="modal-form space-y-6">
+        <div class="space-y-1">
+            <h3 class="text-xl font-semibold text-slate-800 dark:text-slate-100">Create Tag</h3>
+            <p class="text-sm text-slate-500">Add a new context for tracking expenses.</p>
+        </div>
+        
+        <label class="block space-y-1">
+            <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">Name</span>
+            <input type="text" name="name" class="input" placeholder="e.g. Vacation 2024" required>
+        </label>
+        
+        <label class="flex items-center gap-3 p-3 border rounded-lg border-slate-200 dark:border-slate-700">
+            <input type="checkbox" name="is_hidden_from_budget" class="checkbox">
+            <div>
+                <span class="font-semibold text-sm text-slate-700 dark:text-slate-200">Exclude from Budget</span>
+                <p class="text-xs text-slate-500">Transactions with this tag won't count towards monthly budget progress.</p>
+            </div>
+        </label>
+        
+        <div class="flex justify-end gap-3">
+            <button type="button" class="btn btn-ghost" onclick="document.getElementById('create-tag-modal').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Create Tag</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}

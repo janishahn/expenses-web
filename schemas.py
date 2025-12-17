@@ -3,7 +3,14 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from models import CurrencyCode, IntervalUnit, MonthDayPolicy, TransactionType
+from models import (
+    BudgetFrequency,
+    CurrencyCode,
+    IntervalUnit,
+    MonthDayPolicy,
+    RuleMatchType,
+    TransactionType,
+)
 
 
 class ReportOptions(BaseModel):
@@ -25,11 +32,19 @@ class ReportOptions(BaseModel):
     include_category_subtotals: bool = False
 
 
-class BudgetIn(BaseModel):
+class BudgetOverrideIn(BaseModel):
     year: int = Field(..., ge=1970, le=3000)
     month: int = Field(..., ge=1, le=12)
     category_id: Optional[int] = None
     amount_cents: int = Field(..., ge=0)
+
+
+class BudgetTemplateIn(BaseModel):
+    frequency: BudgetFrequency
+    category_id: Optional[int] = None
+    amount_cents: int = Field(..., ge=0)
+    starts_on: date
+    ends_on: Optional[date] = None
 
 
 class CategoryIn(BaseModel):
@@ -45,6 +60,13 @@ class TransactionIn(BaseModel):
     amount_cents: int = Field(..., ge=0)
     category_id: int
     note: str = Field(..., min_length=1, max_length=200)
+    tags: list[str] = Field(default_factory=list)
+
+
+class TagIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+    color: Optional[str] = Field(None, max_length=9)
+    is_hidden_from_budget: bool = False
 
 
 class RecurringRuleIn(BaseModel):
@@ -75,3 +97,17 @@ class BalanceAnchorIn(BaseModel):
     as_of_at: datetime
     balance_cents: int
     note: Optional[str] = Field(default=None, max_length=200)
+
+
+class RuleIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    enabled: bool = True
+    priority: int = Field(default=100, ge=0, le=10_000)
+    match_type: RuleMatchType
+    match_value: str = Field(..., min_length=1, max_length=200)
+    transaction_type: Optional[TransactionType] = None
+    min_amount_cents: Optional[int] = Field(default=None, ge=0)
+    max_amount_cents: Optional[int] = Field(default=None, ge=0)
+    set_category_id: Optional[int] = None
+    add_tags: list[str] = Field(default_factory=list)
+    budget_exclude_tag_id: Optional[int] = None

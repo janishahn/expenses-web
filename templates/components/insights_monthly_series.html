@@ -1,0 +1,51 @@
+{% from "macros.html" import icon %}
+<div id="insights-monthly-series"
+     hx-get="/components/insights/monthly-series"
+     hx-trigger="filtersChanged from:#insights-filters"
+     hx-include="#insights-filter-form"
+     hx-swap="outerHTML"
+     class="card shadow-hover">
+    <div class="card-header flex items-center justify-between">
+        <div>
+            <p class="metric-eyebrow">Trend</p>
+            <h3 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Monthly cashflow</h3>
+        </div>
+        <span class="pill">Last {{ series|length }} month{{ '' if series|length == 1 else 's' }}</span>
+    </div>
+    <div class="separator"></div>
+    <div class="card-body space-y-3">
+        {% if series %}
+        {% set max_income = (series | map(attribute='income_cents') | max) or 1 %}
+        {% set max_expense = (series | map(attribute='expense_cents') | max) or 1 %}
+        <div class="space-y-2">
+            {% for row in series %}
+            <div class="grid grid-cols-[72px_1fr] gap-3 items-center">
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular">{{ row.label }}</div>
+                <div class="space-y-1">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="text-emerald-600">Income</span>
+                        <span class="tabular text-slate-600 dark:text-slate-300">{{ row.income_cents|currency({"include_cents": false}) }} €</span>
+                    </div>
+                    <div class="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div class="h-2 bg-emerald-500 rounded-full" style="width: {{ (row.income_cents / max_income * 100) if max_income else 0 }}%"></div>
+                    </div>
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="text-rose-600">Expenses</span>
+                        <span class="tabular text-slate-600 dark:text-slate-300">{{ row.expense_cents|currency({"include_cents": false}) }} €</span>
+                    </div>
+                    <div class="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div class="h-2 bg-rose-500 rounded-full" style="width: {{ (row.expense_cents / max_expense * 100) if max_expense else 0 }}%"></div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            {{ icon("line-chart", size=56) }}
+            <p class="font-semibold text-slate-800 dark:text-slate-100">No data yet</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Add transactions to see month-over-month trends.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

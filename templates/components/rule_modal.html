@@ -1,0 +1,135 @@
+{% from "macros.html" import icon %}
+<dialog id="rule-modal" class="modal">
+    <form id="rule-form" method="post" action="/rules" class="modal-form space-y-5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="metric-eyebrow">Rules</p>
+                <h3 class="text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100" id="rule-modal-title">Create rule</h3>
+            </div>
+            <button type="button" class="btn btn-ghost btn-icon" onclick="document.getElementById('rule-modal').close()" aria-label="Close">
+                {{ icon("x", class="icon") }}
+            </button>
+        </div>
+
+        <div class="separator"></div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Name
+                <input type="text" name="name" class="input" placeholder="e.g. Netflix → Subscriptions" required>
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Enabled
+                <div class="flex items-center gap-3 p-3 border rounded-xl border-border bg-slate-50/60 dark:bg-slate-800/40">
+                    <input type="checkbox" name="enabled" checked>
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Apply this rule automatically</span>
+                </div>
+            </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Priority
+                <input type="number" name="priority" value="100" min="0" max="10000" class="input">
+            </label>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Transaction type (optional)
+                <select name="transaction_type" class="select">
+                    <option value="">Any</option>
+                    <option value="income">Income</option>
+                    <option value="expense">Expense</option>
+                </select>
+            </label>
+        </div>
+
+        <div class="card bg-slate-50/60 dark:bg-slate-800/40 border border-border rounded-xl p-4 space-y-4">
+            <div class="flex items-center justify-between">
+                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">When</p>
+                <span class="pill">Match</span>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300 md:col-span-1">
+                    Match type
+                    <select name="match_type" class="select">
+                        <option value="contains">Contains</option>
+                        <option value="starts_with">Starts with</option>
+                        <option value="equals">Equals</option>
+                        <option value="regex">Regex</option>
+                    </select>
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300 md:col-span-2">
+                    Note text
+                    <input type="text" name="match_value" class="input" placeholder="e.g. netflix" required>
+                </label>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Min amount (optional)
+                    <input type="text" name="min_amount" inputmode="decimal" class="input" placeholder="e.g. 5.00">
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Max amount (optional)
+                    <input type="text" name="max_amount" inputmode="decimal" class="input" placeholder="e.g. 50.00">
+                </label>
+            </div>
+        </div>
+
+        <div class="card bg-slate-50/60 dark:bg-slate-800/40 border border-border rounded-xl p-4 space-y-4">
+            <div class="flex items-center justify-between">
+                <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">Then</p>
+                <span class="pill">Actions</span>
+            </div>
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Set category (optional)
+                <select name="set_category_id" class="select">
+                    <option value="">Leave unchanged</option>
+                    {% for category in categories %}
+                    <option value="{{ category.id }}">{{ category.type.value|title }} · {{ category.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <div class="space-y-1 tag-input-container" data-available-tags='{{ tags|tojson|safe }}'>
+                <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">Add tags (optional)</span>
+                <input type="hidden" name="add_tags" value="">
+                <div class="tag-input-wrapper">
+                    <div class="tag-chips"></div>
+                    <input type="text" class="tag-text-input" placeholder="Add tags...">
+                </div>
+                <div class="tag-suggestions"></div>
+            </div>
+
+            <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                Exclude from budget (optional)
+                <select name="budget_exclude_tag_id" class="select">
+                    <option value="">No</option>
+                    {% for tag in hidden_tags %}
+                    <option value="{{ tag.id }}">{{ tag.name }}</option>
+                    {% endfor %}
+                </select>
+                <p class="text-xs text-slate-500 dark:text-slate-400">
+                    This adds the chosen “hidden from budget” tag to matching transactions.
+                </p>
+            </label>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:justify-between gap-3">
+            <button type="button"
+                    class="btn btn-secondary"
+                    hx-post="/rules/preview"
+                    hx-target="#rule-preview"
+                    hx-swap="innerHTML"
+                    hx-include="#rule-form">
+                Preview matches
+            </button>
+            <div class="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('rule-modal').close()">Cancel</button>
+                <button type="submit" class="btn btn-primary btn-lg" id="rule-submit">Save rule</button>
+            </div>
+        </div>
+
+        <div id="rule-preview"></div>
+    </form>
+</dialog>

@@ -1,0 +1,41 @@
+{% from "macros.html" import icon %}
+<div id="insights-category-trend"
+     hx-get="/components/insights/category-trend"
+     hx-trigger="filtersChanged from:#insights-filters"
+     hx-include="#insights-filter-form"
+     hx-swap="outerHTML"
+     class="card shadow-hover">
+    <div class="card-header flex items-center justify-between">
+        <div>
+            <p class="metric-eyebrow">Focus</p>
+            <h3 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Category trend</h3>
+        </div>
+        <span class="pill">Last 12 months</span>
+    </div>
+    <div class="separator"></div>
+    <div class="card-body">
+        {% if trend %}
+        {% set max_amount = (trend | map(attribute='amount_cents') | max) or 1 %}
+        <svg viewBox="0 0 100 30" preserveAspectRatio="none" class="w-full h-20">
+            {% set denom = (trend|length - 1) if trend|length > 1 else 1 %}
+            <polyline
+                points="{% for point in trend %}{{ (loop.index0 * 100 / denom) }},{{ 30 - (point.amount_cents / max_amount * 28) - 1 }}{% if not loop.last %} {% endif %}{% endfor %}"
+                fill="none" stroke="currentColor" stroke-width="1.5" class="text-primary" />
+        </svg>
+        <div class="mt-4 space-y-2">
+            {% for point in trend[-6:] %}
+            <div class="flex items-center justify-between text-sm">
+                <span class="text-slate-500 dark:text-slate-400 tabular">{{ point.label }}</span>
+                <span class="tabular font-semibold text-slate-800 dark:text-slate-100">{{ point.amount_cents|currency }} €</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            {{ icon("activity", size=56) }}
+            <p class="font-semibold text-slate-800 dark:text-slate-100">No data for this category</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Choose another category or broaden the period.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% block content %}
+<section id="dashboard-filters" class="space-y-6">
+    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+        <div>
+            <div class="flex items-center gap-2 mb-1">
+                <a href="/tags" class="text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors flex items-center gap-1">
+                    {{ icon("arrow-left", class="w-3 h-3") }} Tags
+                </a>
+            </div>
+            <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100 flex items-center gap-3">
+                {{ icon("tag", class="w-8 h-8 text-slate-400") }}
+                {{ tag.name }}
+                <button type="button" class="btn btn-ghost btn-icon" onclick="document.getElementById('edit-tag-modal').showModal()">
+                    {{ icon("pencil", class="w-4 h-4") }}
+                </button>
+            </h1>
+            <p class="text-slate-500 dark:text-slate-400">
+                Performance overview for this context.
+                {% if tag.is_hidden_from_budget %}
+                <span class="badge badge-warning text-xs ml-2">Hidden from budget</span>
+                {% endif %}
+            </p>
+        </div>
+        
+        <div class="w-full lg:flex-1 lg:max-w-3xl">
+            <form id="dashboard-filter-form" class="hidden">
+                <input type="hidden" name="start" value="{{ period.start }}">
+                <input type="hidden" name="end" value="{{ period.end }}">
+                <input type="hidden" name="period" value="{{ period.slug }}">
+                <input type="hidden" name="tag" value="{{ tag.id }}">
+            </form>
+
+            <div id="tag-filter-card" class="card shadow-hover">
+                <div class="card-body dashboard-filter-card-body">
+                    <div class="transactions-filter-summary">
+                        <div class="transactions-filter-summary-left">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Filters</p>
+                            <div class="transactions-filter-chips" aria-label="Applied filters">
+                                <span class="pill" data-tag-filter-pill="period">{{ period.slug.replace("_"," ")|title }}</span>
+                                <span class="pill" data-tag-filter-pill="date">{{ period.start|eurodate }} → {{ period.end|eurodate }}</span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" data-tag-filter-toggle aria-expanded="false" aria-controls="tag-filter-panel">
+                            <span data-tag-filter-toggle-label>Filters</span>
+                            {{ icon("chevron-down", class="icon filter-toggle-icon") }}
+                        </button>
+                    </div>
+
+                    <div id="tag-filter-panel" class="transactions-filter-panel" data-expanded="false" aria-hidden="true" inert>
+                        <div class="filter-bar filter-bar--bare flex-col xl:flex-row gap-4" role="toolbar" aria-label="Tag filters">
+                            <div class="flex-1 min-w-[220px] space-y-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick ranges</p>
+                                <div class="chip-group" role="group" aria-label="Period presets">
+                                    <button type="button" class="chip" data-period-chip="this_month">This Month</button>
+                                    <button type="button" class="chip" data-period-chip="last_month">Last Month</button>
+                                    <button type="button" class="chip" data-period-chip="all">All time</button>
+                                    <button type="button" class="chip" data-period-chip="custom">Custom</button>
+                                </div>
+                            </div>
+                            <div class="min-w-[220px] space-y-2">
+                                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Date range</p>
+                                <div id="tag-range-picker"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPIs -->
+    {% include "components/kpis.html" %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Breakdown Chart -->
+        <div class="lg:col-span-1 card shadow-hover h-fit">
+            <div class="card-header">
+                <h3 class="font-semibold text-slate-800 dark:text-slate-100">Distribution</h3>
+            </div>
+            <div class="card-body">
+                {% include "components/donut.html" %}
+            </div>
+        </div>
+
+        <!-- Transaction List -->
+        <div class="lg:col-span-2 space-y-4 relative">
+            <h3 class="font-semibold text-lg text-slate-800 dark:text-slate-100">Activity in this context</h3>
+            {% include "components/tag_activity.html" %}
+            <div class="tag-activity-indicator htmx-indicator absolute inset-0 rounded-xl bg-white/70 dark:bg-slate-900/70 backdrop-blur flex items-center justify-center">
+                <div class="space-y-3 w-full px-6">
+                    {% for _ in range(6) %}
+                    <div class="skeleton h-10 w-full"></div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<dialog id="edit-tag-modal" class="modal">
+    <form method="post" action="/tags/{{ tag.id }}/edit" class="modal-form space-y-6">
+        <div class="space-y-1">
+            <h3 class="text-xl font-semibold text-slate-800 dark:text-slate-100">Edit Tag</h3>
+            <p class="text-sm text-slate-500">Update tag settings.</p>
+        </div>
+        
+        <label class="block space-y-1">
+            <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">Name</span>
+            <input type="text" name="name" value="{{ tag.name }}" class="input" required>
+        </label>
+        
+        <label class="flex items-center gap-3 p-3 border rounded-lg border-slate-200 dark:border-slate-700">
+            <input type="checkbox" name="is_hidden_from_budget" class="checkbox" {% if tag.is_hidden_from_budget %}checked{% endif %}>
+            <div>
+                <span class="font-semibold text-sm text-slate-700 dark:text-slate-200">Exclude from Budget</span>
+                <p class="text-xs text-slate-500">Transactions with this tag won't count towards monthly budget progress.</p>
+            </div>
+        </label>
+        
+        <div class="flex justify-end gap-3">
+            <button type="button" class="btn btn-ghost text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 mr-auto"
+                hx-post="/tags/{{ tag.id }}/delete"
+                hx-confirm="Are you sure? This will remove the tag from all transactions."
+                hx-target="body"
+                hx-push-url="true">
+                Delete
+            </button>
+            <button type="button" class="btn btn-ghost" onclick="document.getElementById('edit-tag-modal').close()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+    (function() {
+        const hub = document.getElementById("dashboard-filters");
+        const form = document.getElementById("dashboard-filter-form");
+        const filterCard = document.getElementById("tag-filter-card");
+        const filterPanel = document.getElementById("tag-filter-panel");
+        if (!hub || !form || !filterCard || !filterPanel) return;
+
+        const periodChips = Array.from(filterCard.querySelectorAll("[data-period-chip]"));
+        const filterToggleBtn = filterCard.querySelector("[data-tag-filter-toggle]");
+        const filterToggleLabel = filterToggleBtn ? filterToggleBtn.querySelector("[data-tag-filter-toggle-label]") : null;
+        const summaryPeriod = filterCard.querySelector("[data-tag-filter-pill='period']");
+        const summaryDate = filterCard.querySelector("[data-tag-filter-pill='date']");
+
+        let rangeApi = null;
+        let pickerMounted = false;
+        let openCustomWhenReady = false;
+
+        function periodLabel(slug) {
+            if (slug === "this_month") return "This month";
+            if (slug === "last_month") return "Last month";
+            if (slug === "all") return "All time";
+            return "Custom";
+        }
+
+        function formatEuroDate(isoDate) {
+            if (!isoDate) return "";
+            const parts = isoDate.split("-");
+            if (parts.length !== 3) return isoDate;
+            return `${parts[2]}.${parts[1]}.${parts[0]}`;
+        }
+
+        function updateSummary(detail) {
+            if (summaryPeriod) summaryPeriod.textContent = periodLabel(detail.period);
+            if (summaryDate) summaryDate.textContent = `${formatEuroDate(detail.start)} → ${formatEuroDate(detail.end)}`;
+        }
+
+        function syncPeriodChips(slug) {
+            periodChips.forEach((chip) => chip.classList.toggle("is-active", chip.dataset.periodChip === slug));
+        }
+
+        function toLocalIso(d) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            return `${year}-${month}-${day}`;
+        }
+
+        function emitFiltersChanged() {
+            const detail = {
+                start: form.elements["start"].value,
+                end: form.elements["end"].value,
+                period: form.elements["period"].value,
+            };
+            updateSummary(detail);
+            hub.dispatchEvent(new CustomEvent("filtersChanged", { bubbles: true, detail }));
+
+            const params = new URLSearchParams(window.location.search);
+            params.set("period", detail.period);
+            params.set("start", detail.start);
+            params.set("end", detail.end);
+            window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+            window.ui?.syncNavPeriodLinks?.();
+        }
+
+        function ensurePickerMounted() {
+            if (pickerMounted) return;
+            pickerMounted = true;
+            mountPicker();
+        }
+
+        function mountPicker() {
+            if (!window.mountDateRangePicker) {
+                window.setTimeout(mountPicker, 50);
+                return;
+            }
+            window.mountDateRangePicker("tag-range-picker", {
+                initialStart: form.elements["start"].value,
+                initialEnd: form.elements["end"].value,
+                onApply: (s, e) => {
+                    form.elements["start"].value = s;
+                    form.elements["end"].value = e;
+                    form.elements["period"].value = "custom";
+                    syncPeriodChips("custom");
+                    emitFiltersChanged();
+                },
+                onExpose: (api) => {
+                    rangeApi = api;
+                    if (openCustomWhenReady) {
+                        openCustomWhenReady = false;
+                        rangeApi.open();
+                    }
+                },
+            });
+        }
+
+        function setPeriod(slug) {
+            const today = new Date();
+            let startDate = null;
+            let endDate = null;
+
+            if (slug === "this_month") {
+                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            } else if (slug === "last_month") {
+                startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+            } else if (slug === "all") {
+                startDate = new Date(1970, 0, 1);
+                endDate = today;
+            } else if (slug === "custom" && rangeApi) {
+                rangeApi.open();
+            } else if (slug === "custom") {
+                ensurePickerMounted();
+                openCustomWhenReady = true;
+            }
+
+            form.elements["period"].value = slug;
+            syncPeriodChips(slug);
+
+            if (startDate && endDate) {
+                const startStr = toLocalIso(startDate);
+                const endStr = toLocalIso(endDate);
+                form.elements["start"].value = startStr;
+                form.elements["end"].value = endStr;
+                if (rangeApi) {
+                    rangeApi.setRange(startStr, endStr);
+                    rangeApi.close();
+                }
+                emitFiltersChanged();
+            } else if (slug === "custom") {
+                emitFiltersChanged();
+            }
+        }
+
+        function setFilterPanelExpanded(expanded) {
+            if (!filterToggleBtn) return;
+            filterToggleBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
+            filterPanel.setAttribute("aria-hidden", expanded ? "false" : "true");
+            filterPanel.dataset.expanded = expanded ? "true" : "false";
+            filterPanel.classList.toggle("is-expanded", expanded);
+            if (expanded) {
+                filterPanel.removeAttribute("inert");
+                filterPanel.style.maxHeight = `${filterPanel.scrollHeight}px`;
+            } else {
+                filterPanel.setAttribute("inert", "");
+                filterPanel.style.maxHeight = "0px";
+            }
+            if (filterToggleLabel) filterToggleLabel.textContent = expanded ? "Hide filters" : "Filters";
+        }
+
+        filterPanel.style.maxHeight = "0px";
+        setFilterPanelExpanded(false);
+
+        if (filterToggleBtn) {
+            filterToggleBtn.addEventListener("click", () => {
+                const expanded = filterToggleBtn.getAttribute("aria-expanded") === "true";
+                const next = !expanded;
+                setFilterPanelExpanded(next);
+                if (next) ensurePickerMounted();
+            });
+        }
+
+        periodChips.forEach((chip) => {
+            chip.addEventListener("click", () => {
+                setPeriod(chip.dataset.periodChip);
+            });
+        });
+
+        syncPeriodChips(form.elements["period"].value || "");
+        updateSummary({
+            start: form.elements["start"].value,
+            end: form.elements["end"].value,
+            period: form.elements["period"].value,
+        });
+    })();
+</script>
+{% endblock %}

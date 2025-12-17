@@ -1,0 +1,43 @@
+{% from "macros.html" import icon %}
+<div id="tag-activity-panel"
+     hx-get="/components/tag-activity"
+     hx-trigger="transactions-changed from:body, filtersChanged from:#dashboard-filters"
+     hx-swap="outerHTML"
+     hx-include="#dashboard-filter-form"
+     hx-indicator=".tag-activity-indicator"
+     class="card shadow-hover">
+    <div class="card-body p-0">
+        {% if transactions %}
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Note</th>
+                    <th>Category</th>
+                    <th class="text-right">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for txn in transactions %}
+                {% set is_expense = txn.type.value == 'expense' %}
+                <tr>
+                    <td class="whitespace-nowrap">{{ txn.date|eurodate }}</td>
+                    <td class="font-medium text-slate-800 dark:text-slate-100">{{ txn.note }}</td>
+                    <td>{{ txn.category.name }}</td>
+                    <td class="text-right font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                        {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            {{ icon("file-text", size=64) }}
+            <p class="font-semibold text-lg text-slate-800 dark:text-slate-100">No transactions yet</p>
+            <p class="text-sm">Try a broader date range.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+

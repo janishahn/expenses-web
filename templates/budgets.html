@@ -1,29 +1,30 @@
 {% extends "base.html" %}
 {% block content %}
-{% set expense_categories = categories | selectattr('type.value', 'equalto', 'expense') | selectattr('archived_at',
-'none') | list %}
+{% from "macros.html" import icon %}
+{% set expense_categories = categories | selectattr('type.value', 'equalto', 'expense') | selectattr('archived_at','none') | list %}
+
 <section class="space-y-6">
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
             <p class="metric-eyebrow text-xs text-slate-500 dark:text-slate-400">Planning</p>
             <h1 class="text-3xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Budgets</h1>
-            <p class="text-slate-500 dark:text-slate-400">Set monthly limits and track spending against them.</p>
+            <p class="text-slate-500 dark:text-slate-400">Recurring templates + month-specific overrides.</p>
         </div>
-        <form method="get" action="/budgets" class="flex items-end gap-3">
-            <label class="space-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                Month
-                <input type="month" name="month" value="{{ month_value }}" class="input">
-            </label>
-            <button type="submit" class="btn btn-secondary btn-sm">Go</button>
-        </form>
+        <div class="chip-group" role="group" aria-label="Budget views">
+            <a class="chip {% if view == 'month' %}is-active{% endif %}" href="/budgets?view=month&month={{ month_value }}">Month</a>
+            <a class="chip {% if view == 'templates' %}is-active{% endif %}" href="/budgets?view=templates">Templates</a>
+            <a class="chip {% if view == 'year' %}is-active{% endif %}" href="/budgets?view=year&year={{ year_value }}">Year</a>
+        </div>
     </div>
 
+    {% if view == 'month' %}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <form method="post" action="/budgets" class="card shadow-hover space-y-0">
+        <form method="post" action="/budgets/overrides" class="card shadow-hover space-y-0">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="card-header space-y-1">
-                <p class="metric-eyebrow">Create / update</p>
-                <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Monthly Budget</h2>
+                <p class="metric-eyebrow">Override</p>
+                <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Month budget</h2>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Overrides templates for a specific month.</p>
             </div>
             <div class="separator"></div>
             <div class="card-body space-y-4">
@@ -42,123 +43,233 @@
                 </label>
                 <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                     Amount
-                    <input type="text" name="amount" placeholder="e.g., 500.00" inputmode="decimal" class="input"
-                        required>
+                    <input type="text" name="amount" placeholder="e.g., 500.00" inputmode="decimal" class="input" required>
                 </label>
-                <p class="text-xs text-slate-500 dark:text-slate-400">Submitting again for the same month/scope replaces
-                    the amount.</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Tip: Set a monthly template for recurring budgets and use overrides for special months.</p>
             </div>
             <div class="separator"></div>
             <div class="card-footer">
-                <button type="submit" class="btn btn-primary btn-lg w-full">Save budget</button>
+                <button type="submit" class="btn btn-primary btn-lg w-full">Save override</button>
             </div>
         </form>
 
         <div class="lg:col-span-2 space-y-4">
+            <div class="flex items-center justify-between">
+                <form method="get" action="/budgets" class="flex items-end gap-3">
+                    <input type="hidden" name="view" value="month">
+                    <label class="space-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        Month
+                        <input type="month" name="month" value="{{ month_value }}" class="input">
+                    </label>
+                    <button type="submit" class="btn btn-secondary btn-sm">Go</button>
+                </form>
+                <a href="/budgets?view=templates" class="btn btn-ghost btn-sm">Edit templates</a>
+            </div>
+
             {% if budgets %}
             <div class="card shadow-hover">
                 <div class="card-header flex items-center justify-between">
                     <div>
                         <p class="metric-eyebrow">Overview</p>
-                        <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">{{ year
-                            }}-{{ '%02d'|format(month) }} budgets</h2>
+                        <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">{{ month_value }} effective budgets</h2>
                     </div>
                     <span class="badge badge-muted">{{ budgets|length }} total</span>
                 </div>
                 <div class="separator"></div>
-                <!-- Mobile card layout -->
-                <div class="lg:hidden space-y-3 p-4">
-                    {% for budget in budgets %}
-                    {% set p = progress.get(budget.id, {}) %}
+                <div class="card-body space-y-3">
+                    {% for row in budgets %}
+                    {% set p = progress.get(row.scope_category_id, {}) %}
                     {% set spent = p.get('spent_cents', 0) %}
                     {% set remaining = p.get('remaining_cents', 0) %}
-                    {% set over = remaining < 0 %} <div class="card shadow-hover p-4 flex gap-4 items-start">
-                        <div class="flex-1 space-y-1">
-                            <p class="font-semibold text-slate-800 dark:text-slate-100">
-                                {{ budget.category.name if budget.category else "Overall" }}
-                            </p>
-                            <p class="text-sm text-slate-500 dark:text-slate-400">
-                                Budget: <span class="tabular">{{ budget.amount_cents|currency }} €</span>
-                            </p>
-                            <div class="flex gap-4 text-sm">
-                                <span class="text-rose-500 tabular">Spent: {{ spent|currency }} €</span>
-                                <span class="{% if over %}text-rose-500{% else %}text-emerald-500{% endif %} tabular">
-                                    Left: {% if over %}-{% endif %}{{ remaining|abs|currency }} €
-                                </span>
+                    {% set over = remaining < 0 %}
+                    <div class="p-4 rounded-xl border border-border bg-slate-50/60 dark:bg-slate-800/40 space-y-2">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="min-w-0">
+                                <p class="font-semibold text-slate-800 dark:text-slate-100 truncate">{{ row.scope_label }}</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">
+                                    <span class="pill">{{ row.source|title }}</span>
+                                    Budget {{ row.amount_cents|currency }} €
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <p class="tabular text-rose-500">Spent {{ spent|currency }} €</p>
+                                <p class="tabular {% if over %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                                    {% if over %}Over by{% else %}Left{% endif %} {{ remaining|abs|currency }} €
+                                </p>
                             </div>
                         </div>
-                        <form method="post" action="/budgets/{{ budget.id }}/delete?month={{ month_value }}">
+                        <div class="h-2 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
+                            {% set pct = (spent / row.amount_cents * 100) if row.amount_cents else 0 %}
+                            {% if pct > 100 %}{% set pct = 100 %}{% endif %}
+                            <div class="h-2 {% if over %}bg-rose-500{% else %}bg-emerald-500{% endif %} rounded-full" style="width: {{ pct }}%"></div>
+                        </div>
+                        {% if row.source == 'override' %}
+                        <form method="post" action="/budgets/overrides/{{ row.source_id }}/delete?month={{ month_value }}" class="flex justify-end">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete budget">
-                                {{ icon("trash-2", class="icon") }}
-                            </button>
+                            <button type="submit" class="btn btn-ghost btn-sm">Delete override</button>
                         </form>
+                        {% else %}
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Template budget (change in Templates tab).</p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% else %}
+            <div class="card shadow-hover text-center p-10 space-y-3">
+                {{ icon("target", class="mx-auto icon") }}
+                <p class="font-semibold text-slate-800 dark:text-slate-100">No budgets yet</p>
+                <p class="text-slate-500 dark:text-slate-400">Create templates for recurring months or add a monthly override.</p>
+                <a href="/budgets?view=templates" class="btn btn-primary btn-sm">Create templates</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% elif view == 'templates' %}
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <form method="post" action="/budgets/templates" class="card shadow-hover space-y-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="card-header space-y-1">
+                <p class="metric-eyebrow">Recurring</p>
+                <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Budget template</h2>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Applies automatically to future months/years.</p>
+            </div>
+            <div class="separator"></div>
+            <div class="card-body space-y-4">
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Frequency
+                    <select name="frequency" class="select">
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                    </select>
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Starts on
+                    <input type="date" name="starts_on" value="{{ default_month_template_start }}" class="input" required>
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Ends on (optional)
+                    <input type="date" name="ends_on" class="input">
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Scope
+                    <select name="category_id" class="select">
+                        <option value="">Overall (all expenses)</option>
+                        {% for category in expense_categories %}
+                        <option value="{{ category.id }}">{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    Amount
+                    <input type="text" name="amount" placeholder="e.g., 500.00" inputmode="decimal" class="input" required>
+                </label>
+            </div>
+            <div class="separator"></div>
+            <div class="card-footer">
+                <button type="submit" class="btn btn-primary btn-lg w-full">Save template</button>
+            </div>
+        </form>
+
+        <div class="lg:col-span-2 space-y-4">
+            <div class="card shadow-hover">
+                <div class="card-header flex items-center justify-between">
+                    <div>
+                        <p class="metric-eyebrow">Library</p>
+                        <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Templates</h2>
+                    </div>
+                    <span class="badge badge-muted">{{ templates|length }} total</span>
+                </div>
+                <div class="separator"></div>
+                <div class="card-body space-y-3">
+                    {% if templates %}
+                    {% for t in templates %}
+                    <div class="p-4 rounded-xl border border-border bg-slate-50/60 dark:bg-slate-800/40 space-y-2">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="min-w-0">
+                                <p class="font-semibold text-slate-800 dark:text-slate-100 truncate">
+                                    {{ t.category.name if t.category else "Overall" }}
+                                </p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">
+                                    <span class="pill">{{ t.frequency.value|title }}</span>
+                                    From {{ t.starts_on|eurodate }}{% if t.ends_on %} to {{ t.ends_on|eurodate }}{% endif %}
+                                </p>
+                            </div>
+                            <p class="tabular font-semibold text-slate-800 dark:text-slate-100">{{ t.amount_cents|currency }} €</p>
+                        </div>
+                        <form method="post" action="/budgets/templates/{{ t.id }}/delete" class="flex justify-end"
+                              onsubmit="return confirm('Delete this template?')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-ghost btn-sm">Delete</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="text-sm text-slate-500 dark:text-slate-400">No templates yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <div class="space-y-4">
+        <form method="get" action="/budgets" class="flex flex-col sm:flex-row sm:items-end gap-3">
+            <input type="hidden" name="view" value="year">
+            <label class="space-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Year
+                <input type="number" name="year" value="{{ year_value }}" min="1970" max="3000" class="input">
+            </label>
+            <button type="submit" class="btn btn-secondary btn-sm">Go</button>
+        </form>
+
+        <div class="card shadow-hover">
+            <div class="card-header flex items-center justify-between">
+                <div>
+                    <p class="metric-eyebrow">Yearly</p>
+                    <h2 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">{{ year_value }} budgets</h2>
+                </div>
+                <a href="/budgets?view=templates" class="btn btn-ghost btn-sm">Edit templates</a>
+            </div>
+            <div class="separator"></div>
+            <div class="card-body space-y-3">
+                {% if yearly_budgets %}
+                {% for row in yearly_budgets %}
+                {% set spent = yearly_spent.get(row.scope_category_id, 0) %}
+                {% set remaining = row.amount_cents - spent %}
+                {% set over = remaining < 0 %}
+                <div class="p-4 rounded-xl border border-border bg-slate-50/60 dark:bg-slate-800/40 space-y-2">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="min-w-0">
+                            <p class="font-semibold text-slate-800 dark:text-slate-100 truncate">{{ row.scope_label }}</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400"><span class="pill">Yearly</span> Budget {{ row.amount_cents|currency }} €</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="tabular text-rose-500">Spent {{ spent|currency }} €</p>
+                            <p class="tabular {% if over %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                                {% if over %}Over by{% else %}Left{% endif %} {{ remaining|abs|currency }} €
+                            </p>
+                        </div>
+                    </div>
+                    <div class="h-2 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
+                        {% set pct = (spent / row.amount_cents * 100) if row.amount_cents else 0 %}
+                        {% if pct > 100 %}{% set pct = 100 %}{% endif %}
+                        <div class="h-2 {% if over %}bg-rose-500{% else %}bg-emerald-500{% endif %} rounded-full" style="width: {{ pct }}%"></div>
+                    </div>
                 </div>
                 {% endfor %}
-            </div>
-            <!-- Desktop table layout -->
-            <div class="card-body p-0 hidden lg:block">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Scope</th>
-                            <th class="text-right">Budget</th>
-                            <th class="text-right">Spent</th>
-                            <th class="text-right">Remaining</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for budget in budgets %}
-                        {% set p = progress.get(budget.id, {}) %}
-                        {% set spent = p.get('spent_cents', 0) %}
-                        {% set remaining = p.get('remaining_cents', 0) %}
-                        {% set over = remaining < 0 %} <tr>
-                            <td class="font-medium text-slate-800 dark:text-slate-100">
-                                {{ budget.category.name if budget.category else "Overall" }}
-                            </td>
-                            <td class="text-right tabular">{{ budget.amount_cents|currency }} €</td>
-                            <td class="text-right tabular text-rose-500">{{ spent|currency }} €</td>
-                            <td
-                                class="text-right tabular {% if over %}text-rose-500{% else %}text-emerald-500{% endif %}">
-                                {% if over %}-{% endif %}{{ remaining|abs|currency }} €
-                            </td>
-                            <td class="text-right">
-                                <form method="post" action="/budgets/{{ budget.id }}/delete?month={{ month_value }}">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Delete budget">
-                                        {{ icon("trash-2", class="icon") }}
-                                    </button>
-                                </form>
-                            </td>
-                            </tr>
-                            {% endfor %}
-                    </tbody>
-                </table>
+                {% else %}
+                <div class="empty-state">
+                    {{ icon("calendar", size=56) }}
+                    <p class="font-semibold text-slate-800 dark:text-slate-100">No yearly templates yet</p>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">Create yearly templates in the Templates tab.</p>
+                    <a href="/budgets?view=templates" class="btn btn-primary btn-sm">Create template</a>
+                </div>
+                {% endif %}
             </div>
         </div>
-
-        {% else %}
-        <div class="card shadow-hover empty-state-card">
-            <div class="empty-state-illustration">
-                <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path
-                        d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.5 1.5-1 2-2h2v-4h-2c0-1-.5-1.5-1-2h0V5z" />
-                    <path d="M2 9v1c0 1.1.9 2 2 2h1" />
-                    <path d="M16 11h.01" />
-                </svg>
-            </div>
-            <h3 class="empty-state-title">No budgets for this month</h3>
-            <p class="empty-state-description">Set spending limits to track your expenses and stay on target. Use the
-                form to create your first budget.</p>
-            <div class="empty-state-hint">
-                <span class="empty-state-hint-icon">💡</span>
-                <span>Tip: Start with an overall budget, then add category-specific limits</span>
-            </div>
-        </div>
-        {% endif %}
     </div>
-    </div>
+    {% endif %}
 </section>
 {% endblock %}

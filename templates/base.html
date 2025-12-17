@@ -59,15 +59,30 @@
 
 <body class="app-shell">
     {% set path = request.url.path %}
-    {% set nav_items = [
-    ("/", "Dashboard"),
-    ("/transactions", "Transactions"),
-    ("/budgets", "Budgets"),
-    ("/categories", "Categories"),
-    ("/recurring", "Recurring"),
-    ("/admin", "Admin")
+    {% set primary_nav = [
+    ("/", "Dashboard", "home"),
+    ("/transactions", "Transactions", "list"),
+    ("/insights", "Insights", "pie-chart"),
+    ("/budgets", "Budgets", "wallet")
     ] %}
-    {% set show_pdf_action = path in ["/", "/report", "/reports"] %}
+    {% set more_sections = [
+    ("Automation", [
+        ("/recurring", "Recurring rules", "repeat"),
+        ("/rules", "Categorization rules", "sparkles")
+    ]),
+    ("Organize", [
+        ("/categories", "Categories", "shapes"),
+        ("/tags", "Tags", "tag")
+    ]),
+    ("Reports", [
+        ("/reports/builder", "Report builder", "file-text")
+    ]),
+    ("System", [
+        ("/admin", "Admin", "settings")
+    ])
+    ] %}
+    {% set show_pdf_action = path == "/" %}
+    {% set more_active = path.startswith('/recurring') or path.startswith('/rules') or path.startswith('/categories') or path.startswith('/tags') or path.startswith('/reports') or path.startswith('/admin') %}
     {% from "macros.html" import icon %}
     <div id="app-shell">
         <header class="app-header" hx-boost="true" hx-target="#app-shell" hx-select="#app-shell" hx-swap="outerHTML"
@@ -78,15 +93,39 @@
                     <span class="brand-text">Expenses</span>
                 </a>
                 <nav class="nav-tabs nav-desktop">
-                    {% for href, label in nav_items %}
-                    {% set active = 'is-active' if path.startswith(href) and href != '/' else '' %}
-                    {% if href == '/' and path != '/' %}
-                    {% set active = '' %}
-                    {% elif href == '/' and path == '/' %}
-                    {% set active = 'is-active' %}
-                    {% endif %}
+                    {% for href, label, _icon in primary_nav %}
+                    {% set active = 'is-active' if (href == '/' and path == '/') or (href != '/' and path.startswith(href)) else '' %}
                     <a href="{{ href }}" data-nav-base="{{ href }}" class="nav-tab {{ active }}">{{ label }}</a>
                     {% endfor %}
+                    <div class="nav-more">
+                        <button type="button" class="nav-tab nav-more-toggle {% if more_active %}is-active{% endif %}"
+                            data-nav-more-toggle aria-haspopup="menu" aria-expanded="false">
+                            More {{ icon("chevron-down", size=16, class="nav-more-icon") }}
+                        </button>
+                        <div class="nav-more-menu" data-nav-more-menu role="menu" aria-hidden="true">
+                            {% for section_label, section_items in more_sections %}
+                            <div class="nav-more-section">
+                                <div class="nav-more-section-title">{{ section_label }}</div>
+                                <div class="nav-more-section-items">
+                                    {% for href, label, item_icon in section_items %}
+                                    {% set active = 'is-active' if (href != '/' and path.startswith(href)) else '' %}
+                                    <a href="{{ href }}" data-nav-base="{{ href }}" role="menuitem"
+                                        class="nav-more-link {{ active }}">
+                                        {{ icon(item_icon, size=16, class="nav-more-link-icon") }}
+                                        <span>{{ label }}</span>
+                                    </a>
+                                    {% endfor %}
+                                    {% if section_label == "Reports" and show_pdf_action %}
+                                    <button type="button" class="nav-more-action" role="menuitem" data-open-report>
+                                        {{ icon("download", size=16, class="nav-more-link-icon") }}
+                                        <span>Generate PDF</span>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                 </nav>
                 <div class="header-actions">
                     <button type="button" class="btn btn-ghost btn-icon" data-theme-toggle aria-pressed="false">
@@ -99,32 +138,63 @@
                         data-open-report {% if not show_pdf_action %}disabled{% endif %}>
                         Generate PDF
                     </button>
-                    <button type="button" class="btn btn-ghost btn-icon mobile-menu-toggle" aria-label="Open menu"
-                        aria-expanded="false">
-                        {{ icon("menu", class="icon menu-icon") }}
-                        {{ icon("x", class="icon close-icon") }}
-                    </button>
                 </div>
             </div>
-            <nav class="nav-mobile" aria-label="Mobile navigation">
-                <div class="nav-mobile-inner">
-                    {% for href, label in nav_items %}
-                    {% set active = 'is-active' if path.startswith(href) and href != '/' else '' %}
-                    {% if href == '/' and path != '/' %}
-                    {% set active = '' %}
-                    {% elif href == '/' and path == '/' %}
-                    {% set active = 'is-active' %}
-                    {% endif %}
-                    <a href="{{ href }}" data-nav-base="{{ href }}" class="nav-mobile-link {{ active }}">{{ label }}</a>
-                    {% endfor %}
-                </div>
-            </nav>
         </header>
         <main class="flex-1 w-full">
             <div class="max-w-screen-xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 sm:space-y-8">
                 {% block content %}{% endblock %}
             </div>
         </main>
+        <nav class="bottom-nav" aria-label="Primary navigation" hx-boost="true" hx-target="#app-shell"
+            hx-select="#app-shell" hx-swap="outerHTML" hx-push-url="true">
+            {% for href, label, item_icon in primary_nav %}
+            {% set active = 'is-active' if (href == '/' and path == '/') or (href != '/' and path.startswith(href)) else '' %}
+            <a href="{{ href }}" data-nav-base="{{ href }}" class="bottom-nav-link {{ active }}">
+                {{ icon(item_icon, size=18, class="bottom-nav-icon") }}
+                <span class="bottom-nav-label">{{ label }}</span>
+            </a>
+            {% endfor %}
+            <button type="button" class="bottom-nav-link bottom-nav-more {% if more_active %}is-active{% endif %}"
+                data-mobile-more-toggle aria-haspopup="dialog" aria-expanded="false">
+                {{ icon("menu", size=18, class="bottom-nav-icon") }}
+                <span class="bottom-nav-label">More</span>
+            </button>
+        </nav>
+        <div class="nav-mobile" aria-label="More navigation" aria-hidden="true" hx-boost="true" hx-target="#app-shell"
+            hx-select="#app-shell" hx-swap="outerHTML" hx-push-url="true">
+            <div class="nav-mobile-backdrop" data-nav-mobile-close></div>
+            <div class="nav-mobile-sheet" role="dialog" aria-modal="true" aria-label="More menu">
+                <div class="nav-mobile-sheet-header">
+                    <div class="nav-mobile-sheet-title">More</div>
+                    <button type="button" class="btn btn-ghost btn-icon" data-nav-mobile-close aria-label="Close menu">
+                        {{ icon("x", class="icon") }}
+                    </button>
+                </div>
+                <div class="nav-mobile-sheet-body">
+                    {% for section_label, section_items in more_sections %}
+                    <div class="nav-mobile-section">
+                        <div class="nav-mobile-section-title">{{ section_label }}</div>
+                        <div class="nav-mobile-section-items">
+                            {% for href, label, item_icon in section_items %}
+                            {% set active = 'is-active' if (href != '/' and path.startswith(href)) else '' %}
+                            <a href="{{ href }}" data-nav-base="{{ href }}" class="nav-mobile-link {{ active }}">
+                                {{ icon(item_icon, size=18, class="nav-mobile-link-icon") }}
+                                <span>{{ label }}</span>
+                            </a>
+                            {% endfor %}
+                            {% if section_label == "Reports" and show_pdf_action %}
+                            <button type="button" class="nav-mobile-action" data-open-report>
+                                {{ icon("download", size=18, class="nav-mobile-link-icon") }}
+                                <span>Generate PDF</span>
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
         {% set show_fab = path in ['/', '/transactions'] or path.startswith('/transactions') %}
         {% if show_fab %}
         <div class="fab md:right-8">

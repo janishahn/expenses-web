@@ -49,6 +49,16 @@
                 Description
                 <input type="text" name="note" value="{{ transaction.note or '' }}" class="input" placeholder="e.g., Lunch with Alex" required>
             </label>
+
+            <div class="space-y-1 tag-input-container" data-available-tags='{{ tags|tojson|safe }}'>
+                <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">Tags</span>
+                <input type="hidden" name="tags" value="{{ transaction.tags|map(attribute='name')|join(',') }}">
+                <div class="tag-input-wrapper">
+                    <div class="tag-chips"></div>
+                    <input type="text" class="tag-text-input" placeholder="Add tags...">
+                </div>
+                <div class="tag-suggestions"></div>
+            </div>
         </div>
         <div class="separator"></div>
         <div class="card-footer flex justify-end gap-3">

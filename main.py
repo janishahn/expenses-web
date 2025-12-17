@@ -36,10 +36,12 @@ from periods import Period, resolve_period
 from scheduler import SchedulerManager
 from schemas import (
     BalanceAnchorIn,
-    BudgetIn,
+    BudgetOverrideIn,
+    BudgetTemplateIn,
     CategoryIn,
     RecurringRuleIn,
     ReportOptions,
+    RuleIn,
     TransactionIn,
 )
 from services import (
@@ -47,6 +49,7 @@ from services import (
     BudgetService,
     CSVService,
     CategoryService,
+    InsightsService,
     MetricsService,
     RecurringRuleService,
     TransactionFilters,
@@ -54,6 +57,7 @@ from services import (
     ReportService,
     rebuild_monthly_rollups,
 )
+import services
 
 if TYPE_CHECKING:  # pragma: no cover
     from weasyprint import HTML, CSS  # noqa: F401
@@ -180,7 +184,18 @@ def filters_from_request(request: Request) -> TransactionFilters:
             category_id = int(category_param)
         except ValueError:
             category_id = None
-    return TransactionFilters(type=txn_type, category_id=category_id, query=query)
+
+    tag_param = request.query_params.get("tag")
+    tag_id = None
+    if tag_param:
+        try:
+            tag_id = int(tag_param)
+        except ValueError:
+            tag_id = None
+
+    return TransactionFilters(
+        type=txn_type, category_id=category_id, query=query, tag_id=tag_id
+    )
 
 
 def render(request: Request, template: str, context: dict[str, object]) -> HTMLResponse:
@@ -222,6 +237,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     metrics_service = MetricsService(db)
     txn_service = TransactionService(db)
     categories = category_service.list_all()
+    all_tags = [
+        {"id": t.id, "name": t.name} for t in services.TagService(db).list_all()
+    ]
     has_any_transactions = txn_service.has_any()
 
     donut_context: dict[str, object] = {"has_any_transactions": has_any_transactions}
@@ -267,6 +285,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             "period": period,
             "filters": filters,
             "categories": categories,
+            "tags": all_tags,
             "kpi": kpi,
             "sparklines": sparklines,
             **donut_context,
@@ -289,6 +308,9 @@ def transactions_page(request: Request, db: Session = Depends(get_db)):
     has_more = len(items) > limit
     items = items[:limit]
     categories = CategoryService(db).list_all()
+    all_tags = [
+        {"id": t.id, "name": t.name} for t in services.TagService(db).list_all()
+    ]
     period_query = f"period={period.slug}&start={period.start}&end={period.end}"
     from urllib.parse import urlencode
 
@@ -297,6 +319,8 @@ def transactions_page(request: Request, db: Session = Depends(get_db)):
         filter_params["type"] = filters.type.value
     if filters.category_id:
         filter_params["category"] = str(filters.category_id)
+    if filters.tag_id:
+        filter_params["tag"] = str(filters.tag_id)
     if filters.query:
         filter_params["q"] = filters.query
     filter_query = urlencode(filter_params)
@@ -310,6 +334,7 @@ def transactions_page(request: Request, db: Session = Depends(get_db)):
             "period": period,
             "transactions": items,
             "categories": categories,
+            "tags": all_tags,
             "filters": filters,
             "page": page,
             "has_more": has_more,
@@ -348,6 +373,7 @@ async def create_transaction(request: Request, db: Session = Depends(get_db)):
             amount_cents=parse_amount(form["amount"]),
             category_id=category_id,
             note=form["note"],
+            tags=[t.strip() for t in (form.get("tags") or "").split(",") if t.strip()],
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -374,7 +400,9 @@ async def create_balance_anchor(request: Request, db: Session = Depends(get_db))
     next_url = form.get("next") or request.app.url_path_for("dashboard")
     try:
         note_raw = form.get("note")
-        note = note_raw.strip() if isinstance(note_raw, str) and note_raw.strip() else None
+        note = (
+            note_raw.strip() if isinstance(note_raw, str) and note_raw.strip() else None
+        )
         data = BalanceAnchorIn(
             as_of_at=datetime.fromisoformat(str(form["as_of_at"])),
             balance_cents=parse_amount(str(form["balance"]), allow_negative=True),
@@ -424,7 +452,9 @@ async def edit_balance_anchor(
     next_url = form.get("next") or request.app.url_path_for("admin_page")
     try:
         note_raw = form.get("note")
-        note = note_raw.strip() if isinstance(note_raw, str) and note_raw.strip() else None
+        note = (
+            note_raw.strip() if isinstance(note_raw, str) and note_raw.strip() else None
+        )
         data = BalanceAnchorIn(
             as_of_at=datetime.fromisoformat(str(form["as_of_at"])),
             balance_cents=parse_amount(str(form["balance"]), allow_negative=True),
@@ -761,16 +791,18 @@ def api_transactions(request: Request, db: Session = Depends(get_db)):
 @app.get("/components/kpis", response_class=HTMLResponse)
 def component_kpis(request: Request, db: Session = Depends(get_db)):
     period = period_from_request(request)
+    filters = filters_from_request(request)
     service = MetricsService(db)
-    metrics = service.kpis(period)
-    sparklines = service.kpi_sparklines(period)
+    tag_ids = [filters.tag_id] if filters.tag_id else None
+    metrics = service.kpis(period, tag_ids=tag_ids)
+    sparklines = service.kpi_sparklines(period, tag_ids=tag_ids)
     deltas = None
     duration_days = (period.end - period.start).days + 1
     if period.slug != "all" and duration_days <= 370:
         prev_end = period.start - timedelta(days=1)
         prev_start = prev_end - timedelta(days=duration_days - 1)
         prev_period = Period("prev", prev_start, prev_end)
-        prev = service.kpis(prev_period)
+        prev = service.kpis(prev_period, tag_ids=tag_ids)
         deltas = {
             "income": metrics["income"] - prev["income"],
             "expenses": metrics["expenses"] - prev["expenses"],
@@ -789,12 +821,20 @@ def component_donut(request: Request, db: Session = Depends(get_db)):
     filters = filters_from_request(request)
 
     service = MetricsService(db)
-    has_any_transactions = TransactionService(db).has_any()
+    tag_ids = [filters.tag_id] if filters.tag_id else None
+    if tag_ids:
+        kpis = service.kpis(period, tag_ids=tag_ids)
+        has_any_transactions = kpis["income"] > 0 or kpis["expenses"] > 0
+    else:
+        has_any_transactions = TransactionService(db).has_any()
+
     if not has_any_transactions:
         return render(request, "components/donut.html", {"has_any_transactions": False})
 
     if filters.type == TransactionType.expense:
-        expense_data = service.category_breakdown(period, TransactionType.expense)
+        expense_data = service.category_breakdown(
+            period, TransactionType.expense, tag_ids=tag_ids
+        )
         return render(
             request,
             "components/donut.html",
@@ -805,7 +845,9 @@ def component_donut(request: Request, db: Session = Depends(get_db)):
             },
         )
     elif filters.type == TransactionType.income:
-        income_data = service.category_breakdown(period, TransactionType.income)
+        income_data = service.category_breakdown(
+            period, TransactionType.income, tag_ids=tag_ids
+        )
         return render(
             request,
             "components/donut.html",
@@ -816,8 +858,12 @@ def component_donut(request: Request, db: Session = Depends(get_db)):
             },
         )
     else:
-        expense_data = service.category_breakdown(period, TransactionType.expense)
-        income_data = service.category_breakdown(period, TransactionType.income)
+        expense_data = service.category_breakdown(
+            period, TransactionType.expense, tag_ids=tag_ids
+        )
+        income_data = service.category_breakdown(
+            period, TransactionType.income, tag_ids=tag_ids
+        )
         return render(
             request,
             "components/donut.html",
@@ -828,6 +874,16 @@ def component_donut(request: Request, db: Session = Depends(get_db)):
                 "income_breakdown": income_data,
             },
         )
+
+
+@app.get("/components/tag-activity", response_class=HTMLResponse)
+def component_tag_activity(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    if not filters.tag_id:
+        raise HTTPException(status_code=400, detail="Missing tag filter")
+    txns = TransactionService(db).list(period, filters, limit=50)
+    return render(request, "components/tag_activity.html", {"transactions": txns})
 
 
 @app.get("/components/transaction-list", response_class=HTMLResponse)
@@ -1542,11 +1598,19 @@ def edit_transaction_page(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     categories = CategoryService(db).list_all()
+    all_tags = [
+        {"id": t.id, "name": t.name} for t in services.TagService(db).list_all()
+    ]
     next_url = request.query_params.get("next")
     return render(
         request,
         "transaction_edit.html",
-        {"transaction": txn, "categories": categories, "next": next_url},
+        {
+            "transaction": txn,
+            "categories": categories,
+            "tags": all_tags,
+            "next": next_url,
+        },
     )
 
 
@@ -1582,6 +1646,7 @@ async def edit_transaction_submit(
             amount_cents=parse_amount(form["amount"]),
             category_id=category_id,
             note=form["note"],
+            tags=[t.strip() for t in (form.get("tags") or "").split(",") if t.strip()],
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1596,6 +1661,10 @@ async def edit_transaction_submit(
 @app.get("/budgets", response_class=HTMLResponse)
 def budgets_page(request: Request, db: Session = Depends(get_db)):
     today = date.today()
+    view = (request.query_params.get("view") or "month").strip().lower()
+    if view not in {"month", "templates", "year"}:
+        view = "month"
+
     ym = request.query_params.get("month")
     if ym:
         year_str, month_str = ym.split("-", 1)
@@ -1606,25 +1675,49 @@ def budgets_page(request: Request, db: Session = Depends(get_db)):
         month = today.month
 
     svc = BudgetService(db)
-    budgets = svc.list_for_month(year, month)
-    progress = svc.progress_for_month(year, month)
+    month_value = f"{year:04d}-{month:02d}"
+
+    effective_budgets = []
+    progress = {}
+    if view == "month":
+        effective_budgets = svc.effective_budgets_for_month(year, month)
+        progress = svc.progress_for_month(year, month)
+
+    templates = []
+    if view == "templates":
+        templates = svc.list_templates()
+
+    year_value = int(request.query_params.get("year") or today.year)
+    yearly_budgets = []
+    yearly_spent = {}
+    if view == "year":
+        yearly_budgets = svc.yearly_budgets_for_year(year_value)
+        yearly_spent = svc.spent_by_category_for_year(year_value)
+
     categories = CategoryService(db).list_all()
     return render(
         request,
         "budgets.html",
         {
+            "view": view,
             "year": year,
             "month": month,
-            "month_value": f"{year:04d}-{month:02d}",
-            "budgets": budgets,
+            "month_value": month_value,
+            "budgets": effective_budgets,
             "progress": progress,
             "categories": categories,
+            "templates": templates,
+            "year_value": year_value,
+            "yearly_budgets": yearly_budgets,
+            "yearly_spent": yearly_spent,
+            "default_month_template_start": f"{today.year:04d}-{today.month:02d}-01",
+            "default_year_template_start": f"{today.year:04d}-01-01",
         },
     )
 
 
-@app.post("/budgets")
-async def upsert_budget(request: Request, db: Session = Depends(get_db)):
+@app.post("/budgets/overrides")
+async def upsert_budget_override(request: Request, db: Session = Depends(get_db)):
     form = await request.form()
     if not validate_csrf_token(form.get("csrf_token", "")):
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
@@ -1636,35 +1729,563 @@ async def upsert_budget(request: Request, db: Session = Depends(get_db)):
         category_id_raw = (form.get("category_id") or "").strip()
         category_id = int(category_id_raw) if category_id_raw else None
         amount_cents = parse_amount(str(form.get("amount") or "0"))
-        data = BudgetIn(
+        data = BudgetOverrideIn(
             year=year, month=month, category_id=category_id, amount_cents=amount_cents
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        BudgetService(db).upsert(data)
+        BudgetService(db).upsert_override(data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse(
-        url=f"/budgets?month={year:04d}-{month:02d}", status_code=303
+        url=f"/budgets?view=month&month={year:04d}-{month:02d}", status_code=303
     )
 
 
-@app.post("/budgets/{budget_id}/delete")
-async def delete_budget(
-    budget_id: int, request: Request, db: Session = Depends(get_db)
+@app.post("/budgets/overrides/{override_id}/delete")
+async def delete_budget_override(
+    override_id: int, request: Request, db: Session = Depends(get_db)
 ):
     form = await request.form()
     if not validate_csrf_token(form.get("csrf_token", "")):
         raise HTTPException(status_code=400, detail="Invalid CSRF token")
     try:
-        BudgetService(db).delete(budget_id)
+        BudgetService(db).delete_override(override_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     ym = request.query_params.get("month")
-    back = f"/budgets?month={ym}" if ym else "/budgets"
+    back = f"/budgets?view=month&month={ym}" if ym else "/budgets?view=month"
     return RedirectResponse(url=back, status_code=303)
+
+
+@app.post("/budgets/templates")
+async def upsert_budget_template(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    try:
+        frequency = str(form.get("frequency") or "monthly").strip().lower()
+        starts_on = date.fromisoformat(str(form.get("starts_on") or ""))
+        ends_raw = str(form.get("ends_on") or "").strip()
+        ends_on = date.fromisoformat(ends_raw) if ends_raw else None
+        category_id_raw = (form.get("category_id") or "").strip()
+        category_id = int(category_id_raw) if category_id_raw else None
+        amount_cents = parse_amount(str(form.get("amount") or "0"))
+        data = BudgetTemplateIn(
+            frequency=frequency,  # type: ignore[arg-type]
+            category_id=category_id,
+            amount_cents=amount_cents,
+            starts_on=starts_on,
+            ends_on=ends_on,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        BudgetService(db).upsert_template(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url="/budgets?view=templates", status_code=303)
+
+
+@app.post("/budgets/templates/{template_id}/delete")
+async def delete_budget_template(
+    template_id: int, request: Request, db: Session = Depends(get_db)
+):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    try:
+        BudgetService(db).delete_template(template_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return RedirectResponse(url="/budgets?view=templates", status_code=303)
+
+
+@app.get("/rules", response_class=HTMLResponse)
+def rules_page(request: Request, db: Session = Depends(get_db)):
+    rules = services.RuleService(db).list_all()
+    categories = CategoryService(db).list_all()
+    tags = services.TagService(db).list_all()
+    hidden_tags = [t for t in tags if t.is_hidden_from_budget]
+    return render(
+        request,
+        "rules.html",
+        {
+            "rules": rules,
+            "categories": categories,
+            "tags": [{"id": t.id, "name": t.name} for t in tags],
+            "hidden_tags": hidden_tags,
+        },
+    )
+
+
+def _optional_amount_cents(value: object) -> Optional[int]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    return parse_amount(raw)
+
+
+@app.post("/rules")
+async def create_rule(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    try:
+        tx_type = str(form.get("transaction_type") or "").strip().lower()
+        transaction_type = TransactionType(tx_type) if tx_type else None
+
+        set_category_raw = str(form.get("set_category_id") or "").strip()
+        set_category_id = int(set_category_raw) if set_category_raw else None
+
+        add_tags_raw = str(form.get("add_tags") or "")
+        add_tags = [t.strip() for t in add_tags_raw.split(",") if t.strip()]
+
+        budget_exclude_raw = str(form.get("budget_exclude_tag_id") or "").strip()
+        budget_exclude_tag_id = int(budget_exclude_raw) if budget_exclude_raw else None
+
+        data = RuleIn(
+            name=str(form.get("name") or "").strip(),
+            enabled=str(form.get("enabled") or "") == "on",
+            priority=int(str(form.get("priority") or "100")),
+            match_type=str(form.get("match_type") or "contains"),  # type: ignore[arg-type]
+            match_value=str(form.get("match_value") or "").strip(),
+            transaction_type=transaction_type,
+            min_amount_cents=_optional_amount_cents(form.get("min_amount")),
+            max_amount_cents=_optional_amount_cents(form.get("max_amount")),
+            set_category_id=set_category_id,
+            add_tags=add_tags,
+            budget_exclude_tag_id=budget_exclude_tag_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        services.RuleService(db).create(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url="/rules", status_code=303)
+
+
+@app.post("/rules/{rule_id}")
+async def update_rule(rule_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    try:
+        tx_type = str(form.get("transaction_type") or "").strip().lower()
+        transaction_type = TransactionType(tx_type) if tx_type else None
+
+        set_category_raw = str(form.get("set_category_id") or "").strip()
+        set_category_id = int(set_category_raw) if set_category_raw else None
+
+        add_tags_raw = str(form.get("add_tags") or "")
+        add_tags = [t.strip() for t in add_tags_raw.split(",") if t.strip()]
+
+        budget_exclude_raw = str(form.get("budget_exclude_tag_id") or "").strip()
+        budget_exclude_tag_id = int(budget_exclude_raw) if budget_exclude_raw else None
+
+        data = RuleIn(
+            name=str(form.get("name") or "").strip(),
+            enabled=str(form.get("enabled") or "") == "on",
+            priority=int(str(form.get("priority") or "100")),
+            match_type=str(form.get("match_type") or "contains"),  # type: ignore[arg-type]
+            match_value=str(form.get("match_value") or "").strip(),
+            transaction_type=transaction_type,
+            min_amount_cents=_optional_amount_cents(form.get("min_amount")),
+            max_amount_cents=_optional_amount_cents(form.get("max_amount")),
+            set_category_id=set_category_id,
+            add_tags=add_tags,
+            budget_exclude_tag_id=budget_exclude_tag_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        services.RuleService(db).update(rule_id, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url="/rules", status_code=303)
+
+
+@app.post("/rules/{rule_id}/toggle")
+async def toggle_rule(rule_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    enabled = str(form.get("enabled") or "").strip().lower() == "true"
+    try:
+        services.RuleService(db).toggle(rule_id, enabled)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204, headers={"HX-Trigger": "rules-updated"})
+
+
+@app.post("/rules/{rule_id}/delete")
+async def delete_rule(rule_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    try:
+        services.RuleService(db).delete(rule_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204, headers={"HX-Trigger": "rules-updated"})
+
+
+@app.post("/rules/preview", response_class=HTMLResponse)
+async def preview_rule(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+
+    try:
+        match_type = str(form.get("match_type") or "contains").strip()
+        match_value = str(form.get("match_value") or "").strip()
+        tx_type = str(form.get("transaction_type") or "").strip().lower()
+        transaction_type = TransactionType(tx_type) if tx_type else None
+        min_amount = _optional_amount_cents(form.get("min_amount"))
+        max_amount = _optional_amount_cents(form.get("max_amount"))
+        set_category_raw = str(form.get("set_category_id") or "").strip()
+        set_category_id = int(set_category_raw) if set_category_raw else None
+        add_tags_raw = str(form.get("add_tags") or "")
+        add_tags = [t.strip() for t in add_tags_raw.split(",") if t.strip()]
+        budget_exclude_raw = str(form.get("budget_exclude_tag_id") or "").strip()
+        budget_exclude_tag_id = int(budget_exclude_raw) if budget_exclude_raw else None
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    recent = TransactionService(db).recent(limit=200)
+    set_category = db.get(Category, set_category_id) if set_category_id else None
+    exclude_tag = None
+    if budget_exclude_tag_id:
+        from models import Tag
+
+        exclude_tag = db.get(Tag, budget_exclude_tag_id)
+
+    def matches(txn: Transaction) -> bool:
+        if transaction_type and txn.type != transaction_type:
+            return False
+        if min_amount is not None and txn.amount_cents < min_amount:
+            return False
+        if max_amount is not None and txn.amount_cents > max_amount:
+            return False
+        note = (txn.note or "").strip()
+        if not match_value:
+            return False
+        nl = note.lower()
+        mv = match_value.lower()
+        if match_type == "contains":
+            return mv in nl
+        if match_type == "equals":
+            return nl == mv
+        if match_type == "starts_with":
+            return nl.startswith(mv)
+        if match_type == "regex":
+            import re
+
+            try:
+                return re.search(match_value, note, flags=re.IGNORECASE) is not None
+            except re.error:
+                return False
+        return False
+
+    sample: list[dict[str, object]] = []
+    for txn in recent:
+        if not matches(txn):
+            continue
+        before_category = txn.category.name if txn.category else "Uncategorized"
+        after_category = before_category
+        if set_category and set_category.type == txn.type:
+            after_category = set_category.name
+        added_tags = set(add_tags)
+        if exclude_tag:
+            added_tags.add(exclude_tag.name)
+        sample.append(
+            {
+                "id": txn.id,
+                "note": txn.note,
+                "amount_cents": txn.amount_cents,
+                "type": txn.type.value,
+                "before_category": before_category,
+                "after_category": after_category,
+                "add_tags": sorted(added_tags),
+            }
+        )
+        if len(sample) >= 10:
+            break
+
+    return render(
+        request,
+        "components/rule_preview.html",
+        {"matches_count": sum(1 for txn in recent if matches(txn)), "sample": sample},
+    )
+
+
+@app.get("/insights", response_class=HTMLResponse)
+def insights_page(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    tag_ids = [filters.tag_id] if filters.tag_id else None
+
+    insights = InsightsService(db)
+    series = insights.monthly_series(period, months_back=12, tag_ids=tag_ids)
+    expense_breakdown = MetricsService(db).category_breakdown(
+        period, TransactionType.expense, tag_ids=tag_ids
+    )
+    income_breakdown = MetricsService(db).category_breakdown(
+        period, TransactionType.income, tag_ids=tag_ids
+    )
+    deltas = insights.expense_category_deltas(period, tag_ids=tag_ids)
+    top_tags = insights.top_tags(period, transaction_type=TransactionType.expense)
+
+    all_categories = CategoryService(db).list_all()
+    trend_category_raw = str(request.query_params.get("trend_category") or "").strip()
+    trend_category_id = int(trend_category_raw) if trend_category_raw else None
+    if not trend_category_id and all_categories:
+        default = next(
+            (c for c in all_categories if c.type == TransactionType.expense), None
+        )
+        trend_category_id = (default or all_categories[0]).id
+    trend = (
+        insights.category_trend(
+            trend_category_id, end=period.end, months_back=12, tag_ids=tag_ids
+        )
+        if trend_category_id
+        else []
+    )
+
+    budget_month = str(request.query_params.get("budget_month") or "")
+    if not budget_month:
+        budget_month = f"{period.end.year:04d}-{period.end.month:02d}"
+    try:
+        byear, bmonth = (int(p) for p in budget_month.split("-", 1))
+    except Exception:
+        byear, bmonth = period.end.year, period.end.month
+        budget_month = f"{byear:04d}-{bmonth:02d}"
+    budget_service = BudgetService(db)
+    budget_effective = budget_service.effective_budgets_for_month(byear, bmonth)
+    budget_progress = budget_service.progress_for_month(byear, bmonth)
+
+    all_tags = services.TagService(db).list_all()
+    period_query = f"period={period.slug}&start={period.start}&end={period.end}"
+    return render(
+        request,
+        "insights.html",
+        {
+            "period": period,
+            "filters": filters,
+            "tags": [{"id": t.id, "name": t.name} for t in all_tags],
+            "categories": all_categories,
+            "series": series,
+            "expense_breakdown": expense_breakdown,
+            "income_breakdown": income_breakdown,
+            "deltas": deltas,
+            "top_tags": top_tags,
+            "trend_category_id": trend_category_id,
+            "trend": trend,
+            "budget_month": budget_month,
+            "budget_effective": budget_effective,
+            "budget_progress": budget_progress,
+            "period_query": period_query,
+        },
+    )
+
+
+@app.get("/components/insights/monthly-series", response_class=HTMLResponse)
+def component_insights_monthly_series(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    tag_ids = [filters.tag_id] if filters.tag_id else None
+    series = InsightsService(db).monthly_series(period, months_back=12, tag_ids=tag_ids)
+    return render(
+        request, "components/insights_monthly_series.html", {"series": series}
+    )
+
+
+@app.get("/components/insights/top-categories", response_class=HTMLResponse)
+def component_insights_top_categories(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    tag_ids = [filters.tag_id] if filters.tag_id else None
+    expense_breakdown = MetricsService(db).category_breakdown(
+        period, TransactionType.expense, tag_ids=tag_ids
+    )
+    income_breakdown = MetricsService(db).category_breakdown(
+        period, TransactionType.income, tag_ids=tag_ids
+    )
+    return render(
+        request,
+        "components/insights_top_categories.html",
+        {"expense_breakdown": expense_breakdown, "income_breakdown": income_breakdown},
+    )
+
+
+@app.get("/components/insights/deltas", response_class=HTMLResponse)
+def component_insights_deltas(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    tag_ids = [filters.tag_id] if filters.tag_id else None
+    deltas = InsightsService(db).expense_category_deltas(period, tag_ids=tag_ids)
+    return render(request, "components/insights_deltas.html", {"deltas": deltas})
+
+
+@app.get("/components/insights/top-tags", response_class=HTMLResponse)
+def component_insights_top_tags(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    tag_ids = [filters.tag_id] if filters.tag_id else None
+    top_tags = InsightsService(db).top_tags(
+        period, transaction_type=TransactionType.expense
+    )
+    if tag_ids:
+        # If a tag filter is active, "top tags" is not meaningful; show empty.
+        top_tags = []
+    return render(
+        request,
+        "components/insights_top_tags.html",
+        {"top_tags": top_tags, "period": period},
+    )
+
+
+@app.get("/components/insights/category-trend", response_class=HTMLResponse)
+def component_insights_category_trend(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    tag_ids = [filters.tag_id] if filters.tag_id else None
+    category_raw = str(request.query_params.get("trend_category") or "").strip()
+    category_id = int(category_raw) if category_raw else None
+    trend = (
+        InsightsService(db).category_trend(
+            category_id, end=period.end, months_back=12, tag_ids=tag_ids
+        )
+        if category_id
+        else []
+    )
+    return render(request, "components/insights_category_trend.html", {"trend": trend})
+
+
+@app.get("/components/insights/budget", response_class=HTMLResponse)
+def component_insights_budget(request: Request, db: Session = Depends(get_db)):
+    budget_month = str(request.query_params.get("budget_month") or "").strip()
+    if not budget_month:
+        budget_month = f"{date.today().year:04d}-{date.today().month:02d}"
+    try:
+        byear, bmonth = (int(p) for p in budget_month.split("-", 1))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid budget_month")
+    svc = BudgetService(db)
+    effective = svc.effective_budgets_for_month(byear, bmonth)
+    progress = svc.progress_for_month(byear, bmonth)
+    return render(
+        request,
+        "components/insights_budget.html",
+        {
+            "budget_month": budget_month,
+            "budget_effective": effective,
+            "budget_progress": progress,
+        },
+    )
+
+
+@app.get("/tags", response_class=HTMLResponse)
+def tags_page(request: Request, db: Session = Depends(get_db)):
+    tags = services.TagService(db).list_all()
+    # TODO: Add usage counts
+    return render(request, "tags.html", {"tags": tags})
+
+
+@app.get("/tags/{tag_id}", response_class=HTMLResponse)
+def tag_details_page(tag_id: int, request: Request, db: Session = Depends(get_db)):
+    # We don't have get() yet, only get_or_create. Need to add get or use db.get directly.
+    from models import Tag
+
+    tag = db.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    period = period_from_request(request)
+    # Default to all time for tags if not specified, as they are often event-based?
+    # Or stick to default period logic (this month). Stick to default for consistency.
+
+    metrics_service = MetricsService(db)
+    txn_service = TransactionService(db)
+
+    kpi = metrics_service.kpis(period, tag_ids=[tag_id])
+    sparklines = metrics_service.kpi_sparklines(period, tag_ids=[tag_id])
+
+    # Pie chart data
+    expense_breakdown = metrics_service.category_breakdown(
+        period, TransactionType.expense, tag_ids=[tag_id]
+    )
+    income_breakdown = metrics_service.category_breakdown(
+        period, TransactionType.income, tag_ids=[tag_id]
+    )
+
+    donut_context = {
+        "mode": "both",
+        "expense_breakdown": expense_breakdown,
+        "income_breakdown": income_breakdown,
+        "has_any_transactions": (kpi["income"] > 0 or kpi["expenses"] > 0),
+    }
+
+    filters = TransactionFilters(tag_id=tag_id)
+    txns = txn_service.list(period, filters, limit=50)
+
+    period_query = f"period={period.slug}&start={period.start}&end={period.end}"
+
+    return render(
+        request,
+        "tag_details.html",
+        {
+            "tag": tag,
+            "period": period,
+            "kpi": kpi,
+            "sparklines": sparklines,
+            **donut_context,
+            "transactions": txns,
+            "period_query": period_query,
+        },
+    )
+
+
+@app.post("/tags")
+async def create_tag(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    # No CSRF token in create_tag for now to match other quick-creates, but should add
+    # Using basic validation
+    try:
+        name = str(form.get("name") or "").strip()
+        is_hidden = form.get("is_hidden_from_budget") == "on"
+        services.TagService(db).create(name, is_hidden)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url="/tags", status_code=303)
+
+
+@app.post("/tags/{tag_id}/edit")
+async def edit_tag(tag_id: int, request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    try:
+        new_name = str(form.get("name") or "").strip()
+        is_hidden = form.get("is_hidden_from_budget") == "on"
+        services.TagService(db).update(tag_id, new_name, is_hidden)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return RedirectResponse(url=f"/tags/{tag_id}", status_code=303)
+
+
+@app.post("/tags/{tag_id}/delete")
+async def delete_tag(tag_id: int, request: Request, db: Session = Depends(get_db)):
+    try:
+        services.TagService(db).delete(tag_id)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url="/tags", status_code=303)
 
 
 def main():

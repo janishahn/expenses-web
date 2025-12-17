@@ -91,7 +91,19 @@
                         </div>
                     </div>
 
-                    <label class="xl:col-span-4 space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                    <label class="xl:col-span-2 space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                        Tag
+                        <select name="tag" class="select">
+                            <option value="">All tags</option>
+                            {% for tag in tags %}
+                            <option value="{{ tag.id }}" {% if filters.tag_id==tag.id %}selected{% endif %}>
+                                {{ tag.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <label class="xl:col-span-2 space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
                         Category
                         <select name="category" class="select">
                             <option value="">All categories</option>
@@ -131,6 +143,9 @@
                         <p class="font-semibold text-slate-800 dark:text-slate-100">{{ txn.note or (txn.category.name if
                             txn.category else "Untitled entry") }}</p>
                         <span class="badge badge-muted text-xs">{{ txn.type.value|title }}</span>
+                        {% for tag in txn.tags %}
+                        <span class="badge badge-muted text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">{{ tag.name }}</span>
+                        {% endfor %}
                     </div>
                     <p class="text-sm text-slate-500 dark:text-slate-400">{{ txn.date|eurodate }} {{
                         txn.occurred_at.strftime('%H:%M') }} • {{ txn.category.name if txn.category else "Uncategorized"
@@ -178,6 +193,9 @@
                             <td>{{ txn.date|eurodate }} {{ txn.occurred_at.strftime('%H:%M') }}</td>
                             <td class="font-medium text-slate-800 dark:text-slate-100">
                                 {{ txn.note or "Untitled entry" }}
+                                {% for tag in txn.tags %}
+                                <span class="ml-1 inline-flex items-center rounded-md bg-slate-50 dark:bg-slate-800 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 ring-1 ring-inset ring-slate-500/10">{{ tag.name }}</span>
+                                {% endfor %}
                             </td>
                             <td>{{ txn.category.name if txn.category else "Uncategorized" }}</td>
                             <td>{{ txn.type.value|title }}</td>
@@ -388,6 +406,7 @@
             txnForm.elements["period"].value = initialPeriod;
             txnForm.elements["type"].value = "";
             txnForm.elements["category"].value = "";
+            txnForm.elements["tag"].value = "";
             txnForm.elements["q"].value = "";
             highlightType("");
             syncPeriodChips(initialPeriod);

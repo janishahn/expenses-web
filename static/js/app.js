@@ -168,6 +168,18 @@
     reserveScrollbarSpace();
     checkFilterChipOverflow();
 
+    function setMobileNavOpen(isOpen) {
+      const navMobile = document.querySelector(".nav-mobile");
+      if (!navMobile) return;
+      const mobileMoreToggles = document.querySelectorAll("[data-mobile-more-toggle]");
+      navMobile.classList.toggle("is-open", isOpen);
+      navMobile.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      mobileMoreToggles.forEach((btn) => {
+        btn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      });
+      document.body.style.overflow = isOpen ? "hidden" : "";
+    }
+
     document.addEventListener("click", (event) => {
       const themeToggle = event.target.closest("[data-theme-toggle]");
       if (themeToggle) {
@@ -175,20 +187,46 @@
         return;
       }
 
-      const menuToggle = event.target.closest(".mobile-menu-toggle");
-      if (menuToggle) {
+      const moreToggle = event.target.closest("[data-nav-more-toggle]");
+      if (moreToggle) {
+        const desktopMoreMenu = document.querySelector("[data-nav-more-menu]");
+        if (!desktopMoreMenu) return;
+        const navMore = moreToggle.closest(".nav-more");
+        if (!navMore) return;
+        const isOpen = !navMore.classList.contains("is-open");
+        navMore.classList.toggle("is-open", isOpen);
+        desktopMoreMenu.setAttribute("aria-hidden", isOpen ? "false" : "true");
+        moreToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        return;
+      }
+
+      const desktopMoreItem = event.target.closest(".nav-more-link, .nav-more-action");
+      if (desktopMoreItem) {
+        const desktopMoreMenu = document.querySelector("[data-nav-more-menu]");
+        const desktopMoreToggle = document.querySelector("[data-nav-more-toggle]");
+        const navMore = desktopMoreItem.closest(".nav-more");
+        if (!desktopMoreMenu || !desktopMoreToggle || !navMore) return;
+        navMore.classList.remove("is-open");
+        desktopMoreMenu.setAttribute("aria-hidden", "true");
+        desktopMoreToggle.setAttribute("aria-expanded", "false");
+      }
+
+      const mobileMoreToggle = event.target.closest("[data-mobile-more-toggle]");
+      if (mobileMoreToggle) {
         const navMobile = document.querySelector(".nav-mobile");
-        const isOpen = navMobile?.classList.toggle("is-open");
-        menuToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        setMobileNavOpen(!(navMobile && navMobile.classList.contains("is-open")));
+        return;
+      }
+
+      const navMobileClose = event.target.closest("[data-nav-mobile-close]");
+      if (navMobileClose) {
+        setMobileNavOpen(false);
         return;
       }
 
       const mobileNavLink = event.target.closest(".nav-mobile-link");
       if (mobileNavLink) {
-        const navMobile = document.querySelector(".nav-mobile");
-        const menuToggle = document.querySelector(".mobile-menu-toggle");
-        navMobile?.classList.remove("is-open");
-        menuToggle?.setAttribute("aria-expanded", "false");
+        setMobileNavOpen(false);
       }
 
       const txnClose = event.target.closest("[data-close-transaction]");
@@ -316,6 +354,7 @@
 
       const reportTrigger = event.target.closest("[data-open-report]");
       if (reportTrigger) {
+        setMobileNavOpen(false);
         const modal = document.getElementById("report-modal");
         const form = modal?.querySelector("form");
         if (form) {
@@ -336,6 +375,34 @@
           }
         }
         openDialog(modal);
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      const desktopMoreMenu = document.querySelector("[data-nav-more-menu]");
+      const desktopMoreToggle = document.querySelector("[data-nav-more-toggle]");
+      const navMore = desktopMoreToggle?.closest(".nav-more") || null;
+      if (!desktopMoreMenu || !desktopMoreToggle || !navMore) return;
+      if (navMore.classList.contains("is-open") && !event.target.closest(".nav-more")) {
+        navMore.classList.remove("is-open");
+        desktopMoreMenu.setAttribute("aria-hidden", "true");
+        desktopMoreToggle.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      const desktopMoreMenu = document.querySelector("[data-nav-more-menu]");
+      const desktopMoreToggle = document.querySelector("[data-nav-more-toggle]");
+      const navMore = desktopMoreToggle?.closest(".nav-more") || null;
+      if (desktopMoreMenu && desktopMoreToggle && navMore && navMore.classList.contains("is-open")) {
+        navMore.classList.remove("is-open");
+        desktopMoreMenu.setAttribute("aria-hidden", "true");
+        desktopMoreToggle.setAttribute("aria-expanded", "false");
+      }
+      const navMobile = document.querySelector(".nav-mobile");
+      if (navMobile && navMobile.classList.contains("is-open")) {
+        setMobileNavOpen(false);
       }
     });
 
@@ -378,12 +445,143 @@
     reserveScrollbarSpace();
     checkFilterChipOverflow();
     const navMobile = document.querySelector(".nav-mobile");
-    const menuToggle = document.querySelector(".mobile-menu-toggle");
     navMobile?.classList.remove("is-open");
-    menuToggle?.setAttribute("aria-expanded", "false");
+    navMobile?.setAttribute("aria-hidden", "true");
+    document.querySelectorAll("[data-mobile-more-toggle]").forEach((btn) => {
+      btn.setAttribute("aria-expanded", "false");
+    });
+    const desktopMoreMenu = document.querySelector("[data-nav-more-menu]");
+    const desktopMoreToggle = document.querySelector("[data-nav-more-toggle]");
+    const navMore = desktopMoreToggle?.closest(".nav-more") || null;
+    navMore?.classList.remove("is-open");
+    desktopMoreMenu?.setAttribute("aria-hidden", "true");
+    desktopMoreToggle?.setAttribute("aria-expanded", "false");
+    document.body.style.overflow = "";
   });
 
   window.addEventListener("popstate", () => {
     syncNavPeriodLinks();
   });
+    if (window.mountDateRangePicker) {
+        // ... existing date picker logic ...
+    }
+
+    class TagInput {
+        constructor(container) {
+            this.container = container;
+            this.hiddenInput = container.querySelector('input[type="hidden"]');
+            this.textInput = container.querySelector('input[type="text"]');
+            this.chipsContainer = container.querySelector('.tag-chips');
+            this.suggestionsContainer = container.querySelector('.tag-suggestions');
+            this.availableTags = JSON.parse(container.dataset.availableTags || '[]');
+            this.selectedTags = new Set(this.hiddenInput.value.split(',').map(t => t.trim()).filter(t => t));
+
+            this.init();
+        }
+
+        init() {
+            this.renderChips();
+            this.renderSuggestions();
+
+            this.textInput.addEventListener('input', () => this.renderSuggestions());
+            this.textInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.addTag(this.textInput.value);
+                    this.textInput.value = '';
+                    this.renderSuggestions();
+                } else if (e.key === 'Backspace' && !this.textInput.value && this.selectedTags.size > 0) {
+                    const lastTag = Array.from(this.selectedTags).pop();
+                    this.removeTag(lastTag);
+                }
+            });
+        }
+
+        addTag(name) {
+            const cleanName = name.trim();
+            if (!cleanName || this.selectedTags.has(cleanName)) return;
+            
+            this.selectedTags.add(cleanName);
+            this.updateHiddenInput();
+            this.renderChips();
+            this.renderSuggestions(); // Update suggestions to hide selected
+        }
+
+        removeTag(name) {
+            this.selectedTags.delete(name);
+            this.updateHiddenInput();
+            this.renderChips();
+            this.renderSuggestions();
+        }
+
+        updateHiddenInput() {
+            this.hiddenInput.value = Array.from(this.selectedTags).join(',');
+        }
+
+        renderChips() {
+            this.chipsContainer.innerHTML = '';
+            this.selectedTags.forEach(tag => {
+                const chip = document.createElement('div');
+                chip.className = 'tag-chip';
+                chip.innerHTML = `
+                    <span>${tag}</span>
+                    <button type="button" class="tag-chip-remove" aria-label="Remove tag">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                `;
+                chip.querySelector('button').addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent focusing input if we click delete
+                    this.removeTag(tag);
+                });
+                this.chipsContainer.appendChild(chip);
+            });
+        }
+
+        renderSuggestions() {
+            const query = this.textInput.value.toLowerCase();
+            const suggestions = this.availableTags
+                .filter(tag => !this.selectedTags.has(tag.name))
+                .filter(tag => tag.name.toLowerCase().includes(query));
+
+            this.suggestionsContainer.innerHTML = '';
+            
+            // Only show suggestions if there's a query OR we have some initial/common tags to show
+            // (Showing all might be overwhelming, but let's stick to showing all matching for now)
+            
+            suggestions.forEach(tag => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'tag-suggestion';
+                btn.textContent = tag.name;
+                btn.addEventListener('click', () => {
+                    this.addTag(tag.name);
+                    this.textInput.value = ''; // Clear input immediately
+                    this.textInput.focus();
+                });
+                this.suggestionsContainer.appendChild(btn);
+            });
+            
+            // "Create new" prompt
+            if (query && !suggestions.some(t => t.name.toLowerCase() === query)) {
+                 const createBtn = document.createElement('button');
+                 createBtn.type = 'button';
+                 createBtn.className = 'tag-suggestion tag-suggestion--create';
+                 createBtn.innerHTML = `Create "<strong>${this.textInput.value}</strong>"`;
+                 createBtn.addEventListener('click', () => {
+                     this.addTag(this.textInput.value);
+                     this.textInput.value = '';
+                     this.textInput.focus();
+                 });
+                 this.suggestionsContainer.appendChild(createBtn);
+            }
+        }
+    }
+
+    document.querySelectorAll('.tag-input-container').forEach(el => new TagInput(el));
+    
+    // Re-init on HTMX content swaps (like modal open)
+    document.addEventListener('htmx:afterSwap', (evt) => {
+        evt.target.querySelectorAll('.tag-input-container').forEach(el => new TagInput(el));
+    });
+
 })();

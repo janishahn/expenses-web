@@ -208,20 +208,22 @@
                     <!-- Expandable details row -->
                     <tr class="recurring-details-row" data-recurring-details="{{ rule.id }}" aria-hidden="true">
                         <td colspan="5">
-                            <div class="recurring-details-content">
-                                <div class="recurring-details-pills">
-                                    <span class="pill">{{ rule.type.value|title }}</span>
-                                    <span class="pill">{{ "Automatic" if rule.auto_post else "Manual" }}</span>
-                                    {% if rule.skip_weekends %}
-                                    <span class="pill">Skips weekends</span>
-                                    {% endif %}
-                                    {% if rule.end_date %}
-                                    <span class="pill">Ends {{ rule.end_date|eurodate }}</span>
-                                    {% endif %}
-                                </div>
-                                <div class="recurring-details-meta">
-                                    <span class="text-xs text-slate-500 dark:text-slate-400">Started {{
-                                        rule.anchor_date|eurodate }}</span>
+                            <div class="recurring-details-animate">
+                                <div class="recurring-details-content">
+                                    <div class="recurring-details-pills">
+                                        <span class="pill">{{ rule.type.value|title }}</span>
+                                        <span class="pill">{{ "Automatic" if rule.auto_post else "Manual" }}</span>
+                                        {% if rule.skip_weekends %}
+                                        <span class="pill">Skips weekends</span>
+                                        {% endif %}
+                                        {% if rule.end_date %}
+                                        <span class="pill">Ends {{ rule.end_date|eurodate }}</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="recurring-details-meta">
+                                        <span class="text-xs text-slate-500 dark:text-slate-400">Started {{
+                                            rule.anchor_date|eurodate }}</span>
+                                    </div>
                                 </div>
                             </div>
                         </td>
@@ -587,11 +589,37 @@
 
                 const ruleId = row.dataset.recurringRow;
                 const detailsRow = document.querySelector(`[data-recurring-details="${ruleId}"]`);
+                const detailsWrap = detailsRow ? detailsRow.querySelector(".recurring-details-animate") : null;
                 const isExpanded = row.getAttribute("aria-expanded") === "true";
 
                 row.setAttribute("aria-expanded", !isExpanded);
                 detailsRow.setAttribute("aria-hidden", isExpanded);
                 detailsRow.classList.toggle("is-expanded", !isExpanded);
+
+                if (!detailsWrap) return;
+                const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                if (prefersReducedMotion) {
+                    detailsWrap.style.maxHeight = isExpanded ? "0px" : "none";
+                    return;
+                }
+
+                if (!isExpanded) {
+                    detailsWrap.style.maxHeight = "0px";
+                    detailsWrap.offsetHeight;
+                    detailsWrap.style.maxHeight = `${detailsWrap.scrollHeight}px`;
+                    const onEnd = (event) => {
+                        if (event.propertyName !== "max-height") return;
+                        detailsWrap.style.maxHeight = "none";
+                    };
+                    detailsWrap.addEventListener("transitionend", onEnd, { once: true });
+                    return;
+                }
+
+                const currentHeight = detailsWrap.scrollHeight;
+                detailsWrap.style.maxHeight =
+                    detailsWrap.style.maxHeight === "none" ? `${currentHeight}px` : detailsWrap.style.maxHeight;
+                detailsWrap.offsetHeight;
+                detailsWrap.style.maxHeight = "0px";
             });
 
             row.addEventListener("keydown", (e) => {

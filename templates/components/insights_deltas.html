@@ -1,0 +1,58 @@
+{% from "macros.html" import icon %}
+<div id="insights-deltas"
+     hx-get="/components/insights/deltas"
+     hx-trigger="filtersChanged from:#insights-filters"
+     hx-include="#insights-filter-form"
+     hx-swap="outerHTML"
+     class="card shadow-hover">
+    <div class="card-header">
+        <p class="metric-eyebrow">Change</p>
+        <h3 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">What changed?</h3>
+    </div>
+    <div class="separator"></div>
+    <div class="card-body space-y-5">
+        {% if deltas.increases or deltas.decreases %}
+        <div>
+            <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Biggest increases (expenses)</p>
+            {% if deltas.increases %}
+            <div class="space-y-2">
+                {% for row in deltas.increases %}
+                {% if row.delta_cents > 0 %}
+                <div class="flex items-center justify-between gap-4">
+                    <p class="font-medium text-slate-800 dark:text-slate-100">{{ row.category_name }}</p>
+                    <p class="tabular font-semibold text-rose-500">+{{ row.delta_cents|currency }} €</p>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-slate-500 dark:text-slate-400">No increases found.</p>
+            {% endif %}
+        </div>
+        <div class="separator"></div>
+        <div>
+            <p class="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-2">Biggest decreases (expenses)</p>
+            {% if deltas.decreases %}
+            <div class="space-y-2">
+                {% for row in deltas.decreases %}
+                {% if row.delta_cents < 0 %}
+                <div class="flex items-center justify-between gap-4">
+                    <p class="font-medium text-slate-800 dark:text-slate-100">{{ row.category_name }}</p>
+                    <p class="tabular font-semibold text-emerald-500">{{ row.delta_cents|currency }} €</p>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-sm text-slate-500 dark:text-slate-400">No decreases found.</p>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            {{ icon("bar-chart-3", size=56) }}
+            <p class="font-semibold text-slate-800 dark:text-slate-100">Not enough data yet</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Add more transactions to compare periods.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

@@ -1,19 +1,27 @@
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Optional
 
-from sqlalchemy import case, delete, func, select, tuple_
+from sqlalchemy import case, delete, func, select, tuple_, update
 from sqlalchemy.orm import Session, joinedload
 
 from models import (
     BalanceAnchor,
-    Budget,
+    BudgetFrequency,
+    BudgetOverride,
+    BudgetTemplate,
     Category,
     CurrencyCode,
     MonthlyRollup,
     RecurringRule,
+    Rule,
+    RuleMatchType,
+    Tag,
+    transaction_tags,
     Transaction,
     TransactionType,
 )
@@ -22,10 +30,12 @@ from recurrence import RecurringEngine
 from csv_utils import export_transactions, parse_csv
 from schemas import (
     BalanceAnchorIn,
-    BudgetIn,
+    BudgetOverrideIn,
+    BudgetTemplateIn,
     CategoryIn,
     RecurringRuleIn,
     ReportOptions,
+    RuleIn,
     TransactionIn,
 )
 
@@ -120,6 +130,287 @@ class TransactionFilters:
     type: Optional[TransactionType] = None
     category_id: Optional[int] = None
     query: Optional[str] = None
+    tag_id: Optional[int] = None
+
+
+class TagService:
+    def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
+        self.session = session
+        self.user_id = user_id or get_current_user_id()
+
+    def list_all(self) -> list[Tag]:
+        stmt = select(Tag).where(Tag.user_id == self.user_id).order_by(Tag.name)
+        return self.session.scalars(stmt).all()
+
+    def get_or_create(self, name: str) -> Tag:
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("Tag name cannot be empty")
+
+        stmt = select(Tag).where(
+            Tag.user_id == self.user_id, func.lower(Tag.name) == clean_name.lower()
+        )
+        existing = self.session.scalar(stmt)
+        if existing:
+            return existing
+
+        tag = Tag(user_id=self.user_id, name=clean_name)
+        self.session.add(tag)
+        self.session.flush()
+        return tag
+
+    def create(self, name: str, is_hidden_from_budget: bool = False) -> Tag:
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("Tag name cannot be empty")
+
+        stmt = select(Tag).where(
+            Tag.user_id == self.user_id, func.lower(Tag.name) == clean_name.lower()
+        )
+        existing = self.session.scalar(stmt)
+        if existing:
+            raise ValueError("Tag already exists")
+
+        tag = Tag(
+            user_id=self.user_id,
+            name=clean_name,
+            is_hidden_from_budget=is_hidden_from_budget,
+        )
+        self.session.add(tag)
+        self.session.commit()
+        self.session.refresh(tag)
+        return tag
+
+    def update(self, tag_id: int, name: str, is_hidden_from_budget: bool) -> Tag:
+        tag = self.session.get(Tag, tag_id)
+        if not tag or tag.user_id != self.user_id:
+            raise ValueError("Tag not found")
+
+        clean_name = name.strip()
+        if not clean_name:
+            raise ValueError("Tag name cannot be empty")
+
+        stmt = select(Tag).where(
+            Tag.user_id == self.user_id,
+            func.lower(Tag.name) == clean_name.lower(),
+            Tag.id != tag_id,
+        )
+        if self.session.scalar(stmt):
+            raise ValueError("Tag with this name already exists")
+
+        tag.name = clean_name
+        tag.is_hidden_from_budget = is_hidden_from_budget
+        self.session.commit()
+        self.session.refresh(tag)
+        return tag
+
+    def delete(self, tag_id: int) -> None:
+        tag = self.session.get(Tag, tag_id)
+        if not tag or tag.user_id != self.user_id:
+            raise ValueError("Tag not found")
+
+        self.session.execute(
+            delete(transaction_tags).where(transaction_tags.c.tag_id == tag.id)
+        )
+        self.session.execute(
+            update(Rule)
+            .where(Rule.user_id == self.user_id, Rule.budget_exclude_tag_id == tag.id)
+            .values(budget_exclude_tag_id=None)
+        )
+        self.session.delete(tag)
+        self.session.commit()
+
+
+class RuleService:
+    def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
+        self.session = session
+        self.user_id = user_id or get_current_user_id()
+
+    def list_all(self) -> list[Rule]:
+        stmt = (
+            select(Rule)
+            .options(
+                joinedload(Rule.set_category),
+                joinedload(Rule.budget_exclude_tag),
+            )
+            .where(Rule.user_id == self.user_id)
+            .order_by(Rule.priority.asc(), Rule.id.asc())
+        )
+        return self.session.scalars(stmt).all()
+
+    def get(self, rule_id: int) -> Rule:
+        rule = self.session.get(Rule, rule_id)
+        if not rule or rule.user_id != self.user_id:
+            raise ValueError("Rule not found")
+        return rule
+
+    def create(self, data: RuleIn) -> Rule:
+        category_id = data.set_category_id
+        if category_id is not None:
+            category = self.session.get(Category, category_id)
+            if not category or category.user_id != self.user_id:
+                raise ValueError("Category not found")
+            if data.transaction_type and category.type != data.transaction_type:
+                raise ValueError("Category type mismatch")
+
+        budget_exclude_tag_id = data.budget_exclude_tag_id
+        if budget_exclude_tag_id is not None:
+            tag = self.session.get(Tag, budget_exclude_tag_id)
+            if not tag or tag.user_id != self.user_id:
+                raise ValueError("Tag not found")
+
+        rule = Rule(
+            user_id=self.user_id,
+            name=data.name.strip(),
+            enabled=data.enabled,
+            priority=data.priority,
+            match_type=data.match_type,
+            match_value=data.match_value.strip(),
+            transaction_type=data.transaction_type,
+            min_amount_cents=data.min_amount_cents,
+            max_amount_cents=data.max_amount_cents,
+            set_category_id=category_id,
+            add_tags_json=json.dumps([t.strip() for t in data.add_tags if t.strip()]),
+            budget_exclude_tag_id=budget_exclude_tag_id,
+        )
+        self.session.add(rule)
+        self.session.commit()
+        self.session.refresh(rule)
+        return rule
+
+    def update(self, rule_id: int, data: RuleIn) -> Rule:
+        rule = self.get(rule_id)
+
+        category_id = data.set_category_id
+        if category_id is not None:
+            category = self.session.get(Category, category_id)
+            if not category or category.user_id != self.user_id:
+                raise ValueError("Category not found")
+            if data.transaction_type and category.type != data.transaction_type:
+                raise ValueError("Category type mismatch")
+
+        budget_exclude_tag_id = data.budget_exclude_tag_id
+        if budget_exclude_tag_id is not None:
+            tag = self.session.get(Tag, budget_exclude_tag_id)
+            if not tag or tag.user_id != self.user_id:
+                raise ValueError("Tag not found")
+
+        rule.name = data.name.strip()
+        rule.enabled = data.enabled
+        rule.priority = data.priority
+        rule.match_type = data.match_type
+        rule.match_value = data.match_value.strip()
+        rule.transaction_type = data.transaction_type
+        rule.min_amount_cents = data.min_amount_cents
+        rule.max_amount_cents = data.max_amount_cents
+        rule.set_category_id = category_id
+        rule.add_tags_json = json.dumps([t.strip() for t in data.add_tags if t.strip()])
+        rule.budget_exclude_tag_id = budget_exclude_tag_id
+
+        self.session.commit()
+        self.session.refresh(rule)
+        return rule
+
+    def toggle(self, rule_id: int, enabled: bool) -> None:
+        rule = self.get(rule_id)
+        rule.enabled = enabled
+        self.session.commit()
+
+    def delete(self, rule_id: int) -> None:
+        rule = self.get(rule_id)
+        self.session.delete(rule)
+        self.session.commit()
+
+    def apply_rules(self, txn: Transaction) -> dict[str, object]:
+        """
+        Apply enabled rules to a transaction (category + tags only).
+        Returns a lightweight summary for UI/debugging.
+        """
+        stmt = (
+            select(Rule)
+            .options(joinedload(Rule.set_category), joinedload(Rule.budget_exclude_tag))
+            .where(Rule.user_id == self.user_id, Rule.enabled.is_(True))
+            .order_by(Rule.priority.asc(), Rule.id.asc())
+        )
+        rules = self.session.scalars(stmt).all()
+        if not rules:
+            return {"matched": 0, "applied": 0}
+
+        note = (txn.note or "").strip()
+        note_lower = note.lower()
+
+        applied = 0
+        matched = 0
+        category_set = False
+
+        existing_tag_names = {t.name.lower() for t in (txn.tags or [])}
+
+        def matches(rule: Rule) -> bool:
+            if rule.transaction_type and rule.transaction_type != txn.type:
+                return False
+            if (
+                rule.min_amount_cents is not None
+                and txn.amount_cents < rule.min_amount_cents
+            ):
+                return False
+            if (
+                rule.max_amount_cents is not None
+                and txn.amount_cents > rule.max_amount_cents
+            ):
+                return False
+
+            needle = (rule.match_value or "").strip()
+            if not needle:
+                return False
+            if rule.match_type == RuleMatchType.contains:
+                return needle.lower() in note_lower
+            if rule.match_type == RuleMatchType.equals:
+                return note_lower == needle.lower()
+            if rule.match_type == RuleMatchType.starts_with:
+                return note_lower.startswith(needle.lower())
+            if rule.match_type == RuleMatchType.regex:
+                try:
+                    return re.search(needle, note, flags=re.IGNORECASE) is not None
+                except re.error:
+                    return False
+            return False
+
+        tag_service = TagService(self.session, self.user_id)
+
+        for rule in rules:
+            if not matches(rule):
+                continue
+            matched += 1
+
+            if rule.set_category_id and not category_set:
+                cat = rule.set_category
+                if cat and cat.user_id == self.user_id and cat.type == txn.type:
+                    if txn.category_id != cat.id:
+                        txn.category_id = cat.id
+                        applied += 1
+                    category_set = True
+
+            add_names: list[str] = []
+            if rule.add_tags_json:
+                try:
+                    add_names.extend(json.loads(rule.add_tags_json) or [])
+                except Exception:
+                    add_names = []
+            if rule.budget_exclude_tag:
+                add_names.append(rule.budget_exclude_tag.name)
+
+            for name in add_names:
+                clean = str(name).strip()
+                if not clean:
+                    continue
+                if clean.lower() in existing_tag_names:
+                    continue
+                tag = tag_service.get_or_create(clean)
+                txn.tags.append(tag)
+                existing_tag_names.add(clean.lower())
+                applied += 1
+
+        return {"matched": matched, "applied": applied}
 
 
 class CategoryService:
@@ -208,7 +499,19 @@ class TransactionService:
             category_id=data.category_id,
             note=data.note,
         )
+        if data.tags:
+            tag_service = TagService(self.session, self.user_id)
+            tags: list[Tag] = []
+            tag_ids: set[int] = set()
+            for name in data.tags:
+                tag = tag_service.get_or_create(name)
+                if tag.id not in tag_ids:
+                    tags.append(tag)
+                    tag_ids.add(tag.id)
+            txn.tags = tags
+
         self.session.add(txn)
+        RuleService(self.session, self.user_id).apply_rules(txn)
         update_monthly_rollup(
             self.session,
             self.user_id,
@@ -227,7 +530,7 @@ class TransactionService:
     def get(self, transaction_id: int, *, include_deleted: bool = False) -> Transaction:
         stmt = (
             select(Transaction)
-            .options(joinedload(Transaction.category))
+            .options(joinedload(Transaction.category), joinedload(Transaction.tags))
             .where(
                 Transaction.user_id == self.user_id, Transaction.id == transaction_id
             )
@@ -274,6 +577,19 @@ class TransactionService:
         txn.category_id = data.category_id
         txn.note = data.note
 
+        if data.tags is not None:
+            tag_service = TagService(self.session, self.user_id)
+            tags: list[Tag] = []
+            tag_ids: set[int] = set()
+            for name in data.tags:
+                tag = tag_service.get_or_create(name)
+                if tag.id not in tag_ids:
+                    tags.append(tag)
+                    tag_ids.add(tag.id)
+            txn.tags = tags
+
+        RuleService(self.session, self.user_id).apply_rules(txn)
+
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(Period("transaction", old_date, old_date))
         metrics._invalidate_period_cache(Period("transaction", data.date, data.date))
@@ -291,7 +607,7 @@ class TransactionService:
     ) -> list[Transaction]:
         stmt = (
             select(Transaction)
-            .options(joinedload(Transaction.category))
+            .options(joinedload(Transaction.category), joinedload(Transaction.tags))
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
@@ -310,7 +626,9 @@ class TransactionService:
             stmt = stmt.where(
                 func.lower(func.coalesce(Transaction.note, "")).like(like)
             )
-        return self.session.scalars(stmt).all()
+        if filters.tag_id:
+            stmt = stmt.join(Transaction.tags).where(Tag.id == filters.tag_id)
+        return self.session.scalars(stmt).unique().all()
 
     def all_for_period(
         self, period: Period, filters: Optional[TransactionFilters] = None
@@ -318,7 +636,7 @@ class TransactionService:
         filters = filters or TransactionFilters()
         stmt = (
             select(Transaction)
-            .options(joinedload(Transaction.category))
+            .options(joinedload(Transaction.category), joinedload(Transaction.tags))
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
@@ -335,12 +653,14 @@ class TransactionService:
             stmt = stmt.where(
                 func.lower(func.coalesce(Transaction.note, "")).like(like)
             )
-        return self.session.scalars(stmt).all()
+        if filters.tag_id:
+            stmt = stmt.join(Transaction.tags).where(Tag.id == filters.tag_id)
+        return self.session.scalars(stmt).unique().all()
 
     def recent(self, limit: int = 10) -> list[Transaction]:
         stmt = (
             select(Transaction)
-            .options(joinedload(Transaction.category))
+            .options(joinedload(Transaction.category), joinedload(Transaction.tags))
             .where(
                 Transaction.user_id == self.user_id, Transaction.deleted_at.is_(None)
             )
@@ -391,7 +711,7 @@ class TransactionService:
     def deleted(self, limit: int = 200) -> list[Transaction]:
         stmt = (
             select(Transaction)
-            .options(joinedload(Transaction.category))
+            .options(joinedload(Transaction.category), joinedload(Transaction.tags))
             .where(
                 Transaction.user_id == self.user_id, Transaction.deleted_at.isnot(None)
             )
@@ -522,7 +842,9 @@ class MetricsService:
         if old_key in self._category_breakdown_cache:
             del self._category_breakdown_cache[old_key]
 
-    def kpis(self, period: Period) -> dict[str, int]:
+    def kpis(
+        self, period: Period, *, tag_ids: Optional[list[int]] = None
+    ) -> dict[str, int]:
         def month_start(d: date) -> date:
             return d.replace(day=1)
 
@@ -571,12 +893,30 @@ class MetricsService:
                 Transaction.deleted_at.is_(None),
                 Transaction.date.between(start, end),
             )
+            if tag_ids:
+                stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
             row = self.session.execute(stmt).one()
             return int(row.income), int(row.expenses)
 
-        balance_at_end = BalanceAnchorService(self.session, self.user_id).balance_as_of(
-            datetime.combine(period.end, time.max)
-        )
+        # Balance calculation currently ignores tags because it's account-level.
+        # Ideally, we should support calculating balance for a tag (income - expense),
+        # but BalanceAnchor is global.
+        # For now, if tag_ids are present, "balance" in KPI means "net flow for this tag".
+
+        balance_at_end = 0
+        if not tag_ids:
+            balance_at_end = BalanceAnchorService(
+                self.session, self.user_id
+            ).balance_as_of(datetime.combine(period.end, time.max))
+
+        # If filtering by tags, we cannot use MonthlyRollup as it doesn't have tag info.
+        if tag_ids:
+            income, expenses = kpis_from_transactions(period.start, period.end)
+            return {
+                "income": income,
+                "expenses": expenses,
+                "balance": balance_at_end if not tag_ids else (income - expenses),
+            }
 
         is_single_full_month = (
             period.start == month_start(period.start)
@@ -649,7 +989,13 @@ class MetricsService:
             "balance": balance_at_end,
         }
 
-    def kpi_sparklines(self, period: Period, *, max_points: int = 12) -> dict[str, str]:
+    def kpi_sparklines(
+        self,
+        period: Period,
+        *,
+        max_points: int = 12,
+        tag_ids: Optional[list[int]] = None,
+    ) -> dict[str, str]:
         def month_start(d: date) -> date:
             return d.replace(day=1)
 
@@ -698,6 +1044,8 @@ class MetricsService:
                 Transaction.deleted_at.is_(None),
                 Transaction.date.between(start, end),
             )
+            if tag_ids:
+                stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
             row = self.session.execute(stmt).one()
             return int(row.income), int(row.expenses)
 
@@ -736,19 +1084,27 @@ class MetricsService:
         if len(months) > max_points:
             months = months[-max_points:]
 
-        keys = [(m.year, m.month) for m in months]
-        rollups = self.session.scalars(
-            select(MonthlyRollup).where(
-                MonthlyRollup.user_id == self.user_id,
-                tuple_(MonthlyRollup.year, MonthlyRollup.month).in_(keys),
-            )
-        ).all()
-        rollup_map = {(r.year, r.month): r for r in rollups}
+        rollup_map = {}
+        if not tag_ids:
+            keys = [(m.year, m.month) for m in months]
+            rollups = self.session.scalars(
+                select(MonthlyRollup).where(
+                    MonthlyRollup.user_id == self.user_id,
+                    tuple_(MonthlyRollup.year, MonthlyRollup.month).in_(keys),
+                )
+            ).all()
+            rollup_map = {(r.year, r.month): r for r in rollups}
 
         income_series: list[int] = []
         expense_series: list[int] = []
         balance_series: list[int] = []
         balance_service = BalanceAnchorService(self.session, self.user_id)
+
+        current_balance_offset = 0
+        if tag_ids:
+            # For tags, balance is cumulative net flow
+            current_balance_offset = 0
+
         for month in months:
             bucket_start = month
             bucket_end = month_end(month)
@@ -756,18 +1112,31 @@ class MetricsService:
                 bucket_start = period.start
             if bucket_end > period.end:
                 bucket_end = period.end
+
             full_month = bucket_start == month and bucket_end == month_end(month)
-            if full_month:
+
+            income = 0
+            expenses = 0
+
+            if full_month and not tag_ids:
                 rollup = rollup_map.get((month.year, month.month))
                 income = rollup.income_cents if rollup else 0
                 expenses = rollup.expense_cents if rollup else 0
             else:
                 income, expenses = income_expense_between(bucket_start, bucket_end)
+
             income_series.append(income)
             expense_series.append(expenses)
-            balance_series.append(
-                balance_service.balance_as_of(datetime.combine(bucket_end, time.max))
-            )
+
+            if tag_ids:
+                current_balance_offset += income - expenses
+                balance_series.append(current_balance_offset)
+            else:
+                balance_series.append(
+                    balance_service.balance_as_of(
+                        datetime.combine(bucket_end, time.max)
+                    )
+                )
 
         return {
             "income": build_points(income_series),
@@ -781,6 +1150,7 @@ class MetricsService:
         transaction_type: Optional[TransactionType] = None,
         *,
         category_ids: Optional[list[int]] = None,
+        tag_ids: Optional[list[int]] = None,
     ) -> list[dict[str, object]]:
         if transaction_type is None:
             transaction_type = TransactionType.expense
@@ -791,7 +1161,12 @@ class MetricsService:
             if not category_ids
             else "cats_" + "_".join(str(i) for i in sorted(set(category_ids)))
         )
-        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}"
+        tag_suffix = (
+            "all"
+            if not tag_ids
+            else "tags_" + "_".join(str(i) for i in sorted(set(tag_ids)))
+        )
+        period_key = f"{period.start.isoformat()}_{period.end.isoformat()}_{type_suffix}_{category_suffix}_{tag_suffix}"
         if period_key in self._category_breakdown_cache:
             return self._category_breakdown_cache[period_key]
 
@@ -809,6 +1184,9 @@ class MetricsService:
         )
         if category_ids:
             stmt = stmt.where(Transaction.category_id.in_(category_ids))
+        if tag_ids:
+            stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
+
         rows = self.session.execute(stmt).all()
         total = sum(row.total or 0 for row in rows)
         breakdown = []
@@ -820,6 +1198,226 @@ class MetricsService:
             )
         self._category_breakdown_cache[period_key] = breakdown
         return breakdown
+
+
+class InsightsService:
+    def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
+        self.session = session
+        self.user_id = user_id or get_current_user_id()
+        self.metrics = MetricsService(session, self.user_id)
+
+    @staticmethod
+    def _month_start(d: date) -> date:
+        return d.replace(day=1)
+
+    @staticmethod
+    def _add_months(d: date, count: int) -> date:
+        month_index = (d.year * 12) + (d.month - 1) + count
+        year = month_index // 12
+        month = (month_index % 12) + 1
+        return date(year, month, 1)
+
+    def monthly_series(
+        self,
+        period: Period,
+        *,
+        months_back: int = 12,
+        tag_ids: Optional[list[int]] = None,
+    ) -> list[dict[str, object]]:
+        start_month = self._month_start(period.start)
+        end_month = self._month_start(period.end)
+        months: list[date] = []
+        current = start_month
+        while current <= end_month:
+            months.append(current)
+            current = self._add_months(current, 1)
+        if len(months) > months_back:
+            months = months[-months_back:]
+
+        stmt = (
+            select(
+                func.strftime("%Y", Transaction.date).label("year"),
+                func.strftime("%m", Transaction.date).label("month"),
+                Transaction.type,
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
+            )
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.date.between(months[0], period.end),
+            )
+            .group_by("year", "month", Transaction.type)
+        )
+        if tag_ids:
+            stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
+
+        totals: dict[tuple[int, int], dict[str, int]] = {}
+        for row in self.session.execute(stmt):
+            y = int(row.year)
+            m = int(row.month)
+            key = (y, m)
+            bucket = totals.setdefault(key, {"income": 0, "expense": 0})
+            if row.type == TransactionType.income:
+                bucket["income"] = int(row.total)
+            else:
+                bucket["expense"] = int(row.total)
+
+        out: list[dict[str, object]] = []
+        for month in months:
+            bucket = totals.get((month.year, month.month), {"income": 0, "expense": 0})
+            income = int(bucket["income"])
+            expense = int(bucket["expense"])
+            out.append(
+                {
+                    "year": month.year,
+                    "month": month.month,
+                    "label": f"{month.year:04d}-{month.month:02d}",
+                    "income_cents": income,
+                    "expense_cents": expense,
+                    "net_cents": income - expense,
+                }
+            )
+        return out
+
+    def top_tags(
+        self,
+        period: Period,
+        *,
+        transaction_type: TransactionType = TransactionType.expense,
+        limit: int = 12,
+    ) -> list[dict[str, object]]:
+        stmt = (
+            select(
+                Tag.id.label("tag_id"),
+                Tag.name.label("tag_name"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
+            )
+            .select_from(Transaction)
+            .join(Transaction.tags)
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == transaction_type,
+                Transaction.date.between(period.start, period.end),
+            )
+            .group_by(Tag.id, Tag.name)
+            .order_by(func.sum(Transaction.amount_cents).desc())
+            .limit(limit)
+        )
+        return [
+            {"id": int(r.tag_id), "name": str(r.tag_name), "amount_cents": int(r.total)}
+            for r in self.session.execute(stmt)
+        ]
+
+    def category_trend(
+        self,
+        category_id: int,
+        *,
+        end: date,
+        months_back: int = 12,
+        tag_ids: Optional[list[int]] = None,
+    ) -> list[dict[str, object]]:
+        end_month = self._month_start(end)
+        start_month = self._add_months(end_month, -(months_back - 1))
+        months: list[date] = []
+        current = start_month
+        while current <= end_month:
+            months.append(current)
+            current = self._add_months(current, 1)
+
+        stmt = (
+            select(
+                func.strftime("%Y", Transaction.date).label("year"),
+                func.strftime("%m", Transaction.date).label("month"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
+            )
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.category_id == category_id,
+                Transaction.date.between(start_month, end),
+            )
+            .group_by("year", "month")
+        )
+        if tag_ids:
+            stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
+        totals = {
+            (int(r.year), int(r.month)): int(r.total)
+            for r in self.session.execute(stmt)
+        }
+        out: list[dict[str, object]] = []
+        for month in months:
+            out.append(
+                {
+                    "year": month.year,
+                    "month": month.month,
+                    "label": f"{month.year:04d}-{month.month:02d}",
+                    "amount_cents": totals.get((month.year, month.month), 0),
+                }
+            )
+        return out
+
+    def expense_category_deltas(
+        self, period: Period, *, tag_ids: Optional[list[int]] = None, limit: int = 8
+    ) -> dict[str, list[dict[str, object]]]:
+        duration_days = (period.end - period.start).days + 1
+        prev_end = period.start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=duration_days - 1)
+        prev = Period("prev", prev_start, prev_end)
+
+        def totals_for(p: Period) -> dict[int, int]:
+            stmt = (
+                select(
+                    Transaction.category_id,
+                    func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
+                )
+                .where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.deleted_at.is_(None),
+                    Transaction.type == TransactionType.expense,
+                    Transaction.date.between(p.start, p.end),
+                )
+                .group_by(Transaction.category_id)
+            )
+            if tag_ids:
+                stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
+            return {
+                int(r.category_id): int(r.total) for r in self.session.execute(stmt)
+            }
+
+        cur_totals = totals_for(period)
+        prev_totals = totals_for(prev)
+
+        all_category_ids = set(cur_totals.keys()) | set(prev_totals.keys())
+        if not all_category_ids:
+            return {"increases": [], "decreases": []}
+
+        categories = self.session.scalars(
+            select(Category).where(
+                Category.user_id == self.user_id,
+                Category.id.in_(list(all_category_ids)),
+            )
+        ).all()
+        names = {c.id: c.name for c in categories}
+
+        deltas: list[dict[str, object]] = []
+        for cid in all_category_ids:
+            cur = cur_totals.get(cid, 0)
+            prev_amount = prev_totals.get(cid, 0)
+            delta = cur - prev_amount
+            deltas.append(
+                {
+                    "category_id": cid,
+                    "category_name": names.get(cid, "Unknown"),
+                    "current_cents": cur,
+                    "previous_cents": prev_amount,
+                    "delta_cents": delta,
+                }
+            )
+
+        increases = sorted(deltas, key=lambda r: r["delta_cents"], reverse=True)[:limit]
+        decreases = sorted(deltas, key=lambda r: r["delta_cents"])[:limit]
+        return {"increases": increases, "decreases": decreases}
 
 
 class RecurringRuleService:
@@ -1027,6 +1625,7 @@ class CSVService:
         if errors:
             raise ValueError("; ".join(errors))
         dates = set()
+        rule_service = RuleService(self.session, self.user_id)
         for row in preview_rows:
             txn_type = TransactionType(row["type"])
             txn = Transaction(
@@ -1039,6 +1638,7 @@ class CSVService:
                 note=row["note"],
             )
             self.session.add(txn)
+            rule_service.apply_rules(txn)
             update_monthly_rollup(
                 self.session,
                 self.user_id,
@@ -1321,27 +1921,93 @@ class BudgetService:
         self.session = session
         self.user_id = user_id or get_current_user_id()
 
-    def list_for_month(self, year: int, month: int) -> list[Budget]:
+    @staticmethod
+    def _month_start(year: int, month: int) -> date:
+        return date(year, month, 1)
+
+    @staticmethod
+    def _month_end(year: int, month: int) -> date:
+        if month == 12:
+            return date(year + 1, 1, 1) - date.resolution
+        return date(year, month + 1, 1) - date.resolution
+
+    def list_templates(
+        self, *, frequency: Optional[BudgetFrequency] = None
+    ) -> list[BudgetTemplate]:
         stmt = (
-            select(Budget)
-            .options(joinedload(Budget.category))
-            .where(
-                Budget.user_id == self.user_id,
-                Budget.year == year,
-                Budget.month == month,
+            select(BudgetTemplate)
+            .options(joinedload(BudgetTemplate.category))
+            .where(BudgetTemplate.user_id == self.user_id)
+            .order_by(
+                BudgetTemplate.frequency.asc(),
+                BudgetTemplate.category_id.is_(None).desc(),
+                BudgetTemplate.starts_on.desc(),
+                BudgetTemplate.id.desc(),
             )
-            .order_by(Budget.category_id.is_(None).desc(), Budget.amount_cents.desc())
         )
+        if frequency:
+            stmt = stmt.where(BudgetTemplate.frequency == frequency)
         return self.session.scalars(stmt).all()
 
-    def upsert(self, data: BudgetIn) -> Budget:
-        stmt = select(Budget).where(
-            Budget.user_id == self.user_id,
-            Budget.year == data.year,
-            Budget.month == data.month,
-            Budget.category_id.is_(None)
+    def upsert_template(self, data: BudgetTemplateIn) -> BudgetTemplate:
+        if data.category_id is not None:
+            category = self.session.get(Category, data.category_id)
+            if not category or category.user_id != self.user_id:
+                raise ValueError("Category not found")
+            if category.type != TransactionType.expense:
+                raise ValueError("Budgets can only be set for expense categories")
+
+        stmt = select(BudgetTemplate).where(
+            BudgetTemplate.user_id == self.user_id,
+            BudgetTemplate.frequency == data.frequency,
+            BudgetTemplate.starts_on == data.starts_on,
+            BudgetTemplate.category_id.is_(None)
             if data.category_id is None
-            else Budget.category_id == data.category_id,
+            else BudgetTemplate.category_id == data.category_id,
+        )
+        existing = self.session.scalar(stmt)
+        if existing:
+            existing.amount_cents = data.amount_cents
+            existing.ends_on = data.ends_on
+            self.session.commit()
+            self.session.refresh(existing)
+            return existing
+
+        tmpl = BudgetTemplate(
+            user_id=self.user_id,
+            frequency=data.frequency,
+            category_id=data.category_id,
+            amount_cents=data.amount_cents,
+            starts_on=data.starts_on,
+            ends_on=data.ends_on,
+        )
+        self.session.add(tmpl)
+        self.session.commit()
+        self.session.refresh(tmpl)
+        return tmpl
+
+    def delete_template(self, template_id: int) -> None:
+        tmpl = self.session.get(BudgetTemplate, template_id)
+        if not tmpl or tmpl.user_id != self.user_id:
+            raise ValueError("Template not found")
+        self.session.delete(tmpl)
+        self.session.commit()
+
+    def upsert_override(self, data: BudgetOverrideIn) -> BudgetOverride:
+        if data.category_id is not None:
+            category = self.session.get(Category, data.category_id)
+            if not category or category.user_id != self.user_id:
+                raise ValueError("Category not found")
+            if category.type != TransactionType.expense:
+                raise ValueError("Budgets can only be set for expense categories")
+
+        stmt = select(BudgetOverride).where(
+            BudgetOverride.user_id == self.user_id,
+            BudgetOverride.year == data.year,
+            BudgetOverride.month == data.month,
+            BudgetOverride.category_id.is_(None)
+            if data.category_id is None
+            else BudgetOverride.category_id == data.category_id,
         )
         existing = self.session.scalar(stmt)
         if existing:
@@ -1350,37 +2016,112 @@ class BudgetService:
             self.session.refresh(existing)
             return existing
 
-        if data.category_id is not None:
-            category = self.session.get(Category, data.category_id)
-            if not category or category.user_id != self.user_id:
-                raise ValueError("Category not found")
-
-        budget = Budget(
+        override = BudgetOverride(
             user_id=self.user_id,
             year=data.year,
             month=data.month,
             category_id=data.category_id,
             amount_cents=data.amount_cents,
         )
-        self.session.add(budget)
+        self.session.add(override)
         self.session.commit()
-        self.session.refresh(budget)
-        return budget
+        self.session.refresh(override)
+        return override
 
-    def delete(self, budget_id: int) -> None:
-        budget = self.session.get(Budget, budget_id)
-        if not budget or budget.user_id != self.user_id:
-            raise ValueError("Budget not found")
-        self.session.delete(budget)
+    def delete_override(self, override_id: int) -> None:
+        override = self.session.get(BudgetOverride, override_id)
+        if not override or override.user_id != self.user_id:
+            raise ValueError("Override not found")
+        self.session.delete(override)
         self.session.commit()
 
-    def progress_for_month(self, year: int, month: int) -> dict[int, dict[str, int]]:
-        start = date(year, month, 1)
-        if month == 12:
-            end = date(year + 1, 1, 1) - date.resolution
-        else:
-            end = date(year, month + 1, 1) - date.resolution
+    @dataclass(frozen=True)
+    class EffectiveBudget:
+        scope_category_id: Optional[int]
+        scope_label: str
+        amount_cents: int
+        source: str  # "override" | "template"
+        source_id: int
 
+    def _active_templates_for_date(
+        self, target: date, *, frequency: BudgetFrequency
+    ) -> list[BudgetTemplate]:
+        stmt = (
+            select(BudgetTemplate)
+            .options(joinedload(BudgetTemplate.category))
+            .where(
+                BudgetTemplate.user_id == self.user_id,
+                BudgetTemplate.frequency == frequency,
+                BudgetTemplate.starts_on <= target,
+                (BudgetTemplate.ends_on.is_(None) | (BudgetTemplate.ends_on >= target)),
+            )
+            .order_by(
+                BudgetTemplate.category_id.is_(None).desc(),
+                BudgetTemplate.starts_on.desc(),
+                BudgetTemplate.id.desc(),
+            )
+        )
+        return self.session.scalars(stmt).all()
+
+    def effective_budgets_for_month(
+        self, year: int, month: int
+    ) -> list[EffectiveBudget]:
+        month_start = self._month_start(year, month)
+        overrides = self.session.scalars(
+            select(BudgetOverride)
+            .options(joinedload(BudgetOverride.category))
+            .where(
+                BudgetOverride.user_id == self.user_id,
+                BudgetOverride.year == year,
+                BudgetOverride.month == month,
+            )
+        ).all()
+        overrides_by_scope = {o.category_id: o for o in overrides}
+
+        templates = self._active_templates_for_date(
+            month_start, frequency=BudgetFrequency.monthly
+        )
+        templates_latest: dict[Optional[int], BudgetTemplate] = {}
+        for tmpl in templates:
+            if tmpl.category_id in templates_latest:
+                continue
+            templates_latest[tmpl.category_id] = tmpl
+
+        effective: list[BudgetService.EffectiveBudget] = []
+        scopes = set(overrides_by_scope.keys()) | set(templates_latest.keys())
+        for category_id in sorted(scopes, key=lambda v: (-1 if v is None else v)):
+            override = overrides_by_scope.get(category_id)
+            if override:
+                label = override.category.name if override.category else "Overall"
+                effective.append(
+                    BudgetService.EffectiveBudget(
+                        scope_category_id=category_id,
+                        scope_label=label,
+                        amount_cents=override.amount_cents,
+                        source="override",
+                        source_id=override.id,
+                    )
+                )
+                continue
+            tmpl = templates_latest.get(category_id)
+            if tmpl:
+                label = tmpl.category.name if tmpl.category else "Overall"
+                effective.append(
+                    BudgetService.EffectiveBudget(
+                        scope_category_id=category_id,
+                        scope_label=label,
+                        amount_cents=tmpl.amount_cents,
+                        source="template",
+                        source_id=tmpl.id,
+                    )
+                )
+        return effective
+
+    def spent_by_category_for_month(
+        self, year: int, month: int
+    ) -> dict[Optional[int], int]:
+        start = self._month_start(year, month)
+        end = self._month_end(year, month)
         stmt = (
             select(
                 Transaction.category_id,
@@ -1391,23 +2132,79 @@ class BudgetService:
                 Transaction.deleted_at.is_(None),
                 Transaction.type == TransactionType.expense,
                 Transaction.date.between(start, end),
+                ~Transaction.tags.any(Tag.is_hidden_from_budget),
             )
             .group_by(Transaction.category_id)
         )
         spent_by_category = {
             row.category_id: int(row.spent) for row in self.session.execute(stmt)
         }
-        total_spent = sum(spent_by_category.values())
+        total = sum(spent_by_category.values())
+        spent_by_category[None] = total
+        return spent_by_category
 
-        progress: dict[int, dict[str, int]] = {}
-        for budget in self.list_for_month(year, month):
-            spent = (
-                total_spent
-                if budget.category_id is None
-                else spent_by_category.get(budget.category_id, 0)
-            )
-            progress[budget.id] = {
+    def progress_for_month(
+        self, year: int, month: int
+    ) -> dict[Optional[int], dict[str, int]]:
+        effective = self.effective_budgets_for_month(year, month)
+        spent_by_scope = self.spent_by_category_for_month(year, month)
+        progress: dict[Optional[int], dict[str, int]] = {}
+        for row in effective:
+            spent = spent_by_scope.get(row.scope_category_id, 0)
+            progress[row.scope_category_id] = {
                 "spent_cents": spent,
-                "remaining_cents": budget.amount_cents - spent,
+                "remaining_cents": row.amount_cents - spent,
             }
         return progress
+
+    def yearly_budgets_for_year(self, year: int) -> list[EffectiveBudget]:
+        year_start = date(year, 1, 1)
+        templates = self._active_templates_for_date(
+            year_start, frequency=BudgetFrequency.yearly
+        )
+        templates_latest: dict[Optional[int], BudgetTemplate] = {}
+        for tmpl in templates:
+            if tmpl.category_id in templates_latest:
+                continue
+            templates_latest[tmpl.category_id] = tmpl
+
+        effective: list[BudgetService.EffectiveBudget] = []
+        for category_id in sorted(
+            templates_latest.keys(), key=lambda v: (-1 if v is None else v)
+        ):
+            tmpl = templates_latest[category_id]
+            label = tmpl.category.name if tmpl.category else "Overall"
+            effective.append(
+                BudgetService.EffectiveBudget(
+                    scope_category_id=category_id,
+                    scope_label=label,
+                    amount_cents=tmpl.amount_cents,
+                    source="template",
+                    source_id=tmpl.id,
+                )
+            )
+        return effective
+
+    def spent_by_category_for_year(self, year: int) -> dict[Optional[int], int]:
+        start = date(year, 1, 1)
+        end = date(year + 1, 1, 1) - date.resolution
+        stmt = (
+            select(
+                Transaction.category_id,
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("spent"),
+            )
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.expense,
+                Transaction.date.between(start, end),
+                ~Transaction.tags.any(Tag.is_hidden_from_budget),
+            )
+            .group_by(Transaction.category_id)
+        )
+        spent_by_category = {
+            row.category_id: int(row.spent) for row in self.session.execute(stmt)
+        }
+        total = sum(spent_by_category.values())
+        spent_by_category[None] = total
+        return spent_by_category
