@@ -17,8 +17,8 @@ def test_rule_applies_category_and_tags_on_create() -> None:
 
     with Session(engine) as session:
         categories = CategoryService(session)
-        misc = categories.create(
-            CategoryIn(name="Misc", type=TransactionType.expense, order=0)
+        uncategorized = categories.create(
+            CategoryIn(name="Uncategorized", type=TransactionType.expense, order=0)
         )
         subs = categories.create(
             CategoryIn(name="Subscriptions", type=TransactionType.expense, order=0)
@@ -47,7 +47,7 @@ def test_rule_applies_category_and_tags_on_create() -> None:
                 occurred_at=datetime(2025, 1, 5, 12, 0),
                 type=TransactionType.expense,
                 amount_cents=1299,
-                category_id=misc.id,
+                category_id=uncategorized.id,
                 note="Netflix January",
                 tags=[],
             )

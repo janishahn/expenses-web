@@ -1,7 +1,8 @@
+import datetime as dt
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from models import (
     BudgetFrequency,
@@ -61,6 +62,27 @@ class TransactionIn(BaseModel):
     category_id: int
     note: str = Field(..., min_length=1, max_length=200)
     tags: list[str] = Field(default_factory=list)
+
+
+class IngestTransactionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount_cents: int = Field(..., ge=0)
+    note: str = Field(..., min_length=1, max_length=200)
+    date: Optional[dt.date] = None
+    category: Optional[str] = Field(default=None, max_length=100)
+
+
+class IngestTransactionOut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    date: date
+    occurred_at: datetime
+    type: Literal["expense"]
+    amount_cents: int
+    category: str
+    note: str
 
 
 class TagIn(BaseModel):

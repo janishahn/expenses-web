@@ -39,6 +39,8 @@ from schemas import (
     BudgetOverrideIn,
     BudgetTemplateIn,
     CategoryIn,
+    IngestTransactionIn,
+    IngestTransactionOut,
     RecurringRuleIn,
     ReportOptions,
     RuleIn,
@@ -49,6 +51,9 @@ from services import (
     BudgetService,
     CSVService,
     CategoryService,
+    IngestCategoryAmbiguous,
+    IngestCategoryNotFound,
+    IngestService,
     InsightsService,
     MetricsService,
     RecurringRuleService,
@@ -739,6 +744,28 @@ async def preview_recurring_occurrences(request: Request):
             break
 
     return {"occurrences": occurrences}
+
+
+@app.post("/api/ingest", response_model=IngestTransactionOut, status_code=201)
+def api_ingest(data: IngestTransactionIn, db: Session = Depends(get_db)):
+    try:
+        txn = IngestService(db).ingest_expense(data)
+    except IngestCategoryNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except IngestCategoryAmbiguous as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return IngestTransactionOut(
+        id=txn.id,
+        date=txn.date,
+        occurred_at=txn.occurred_at,
+        type="expense",
+        amount_cents=txn.amount_cents,
+        category=txn.category.name,
+        note=txn.note or "",
+    )
 
 
 @app.get("/api/kpis")

@@ -17,6 +17,7 @@ dependencies = [
     "tzdata>=2024.1",
     "weasyprint>=66.0",
     "pytest>=9.0.0",
+    "rapidfuzz>=3.14.3",
 ]
 
 [project.optional-dependencies]

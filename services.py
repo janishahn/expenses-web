@@ -5,10 +5,14 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import case, delete, func, select, tuple_, update
 from sqlalchemy.orm import Session, joinedload
 
+from rapidfuzz.distance import Levenshtein
+
+from config import get_settings
 from models import (
     BalanceAnchor,
     BudgetFrequency,
@@ -33,6 +37,7 @@ from schemas import (
     BudgetOverrideIn,
     BudgetTemplateIn,
     CategoryIn,
+    IngestTransactionIn,
     RecurringRuleIn,
     ReportOptions,
     RuleIn,
@@ -719,6 +724,138 @@ class TransactionService:
             .limit(limit)
         )
         return self.session.scalars(stmt).all()
+
+
+class IngestCategoryNotFound(ValueError):
+    pass
+
+
+class IngestCategoryAmbiguous(ValueError):
+    pass
+
+
+class IngestService:
+    def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
+        self.session = session
+        self.user_id = user_id or get_current_user_id()
+
+    def ingest_expense(self, data: IngestTransactionIn) -> Transaction:
+        now_local = (
+            datetime.now(ZoneInfo(get_settings().timezone))
+            .replace(tzinfo=None)
+            .replace(second=0, microsecond=0)
+        )
+        txn_date = data.date or now_local.date()
+
+        category_name_raw = (data.category or "").strip()
+        if category_name_raw:
+            input_lower = category_name_raw.lower()
+            exact = self.session.scalar(
+                select(Category).where(
+                    Category.user_id == self.user_id,
+                    Category.type == TransactionType.expense,
+                    Category.archived_at.is_(None),
+                    func.lower(Category.name) == input_lower,
+                )
+            )
+            if exact:
+                category_id = exact.id
+            else:
+                categories = self.session.scalars(
+                    select(Category).where(
+                        Category.user_id == self.user_id,
+                        Category.type == TransactionType.expense,
+                        Category.archived_at.is_(None),
+                    )
+                ).all()
+                best_distance: Optional[int] = None
+                best: list[Category] = []
+                for category in categories:
+                    name_lower = (category.name or "").strip().lower()
+                    dist = int(Levenshtein.distance(input_lower, name_lower))
+                    if best_distance is None or dist < best_distance:
+                        best_distance = dist
+                        best = [category]
+                    elif dist == best_distance:
+                        best.append(category)
+
+                if best_distance is not None and best_distance <= 1:
+                    if len(best) > 1:
+                        options = ", ".join(sorted({c.name for c in best}))
+                        raise IngestCategoryAmbiguous(
+                            f"Category '{category_name_raw}' is ambiguous; matches: {options}"
+                        )
+                    category_id = best[0].id
+                else:
+                    try:
+                        created = CategoryService(self.session, self.user_id).create(
+                            CategoryIn(
+                                name=category_name_raw,
+                                type=TransactionType.expense,
+                                order=0,
+                            )
+                        )
+                        category_id = created.id
+                    except ValueError as exc:
+                        existing = self.session.scalar(
+                            select(Category).where(
+                                Category.user_id == self.user_id,
+                                Category.type == TransactionType.expense,
+                                func.lower(Category.name) == input_lower,
+                            )
+                        )
+                        if existing:
+                            if existing.archived_at is not None:
+                                CategoryService(self.session, self.user_id).restore(
+                                    existing.id
+                                )
+                            category_id = existing.id
+                        else:
+                            raise IngestCategoryNotFound(str(exc)) from exc
+        else:
+            default_name = "Uncategorized"
+            default = self.session.scalar(
+                select(Category).where(
+                    Category.user_id == self.user_id,
+                    Category.type == TransactionType.expense,
+                    Category.archived_at.is_(None),
+                    func.lower(Category.name) == default_name.lower(),
+                )
+            )
+            if default:
+                category_id = default.id
+            else:
+                archived_default = self.session.scalar(
+                    select(Category).where(
+                        Category.user_id == self.user_id,
+                        Category.type == TransactionType.expense,
+                        Category.archived_at.is_not(None),
+                        func.lower(Category.name) == default_name.lower(),
+                    )
+                )
+                if archived_default:
+                    CategoryService(self.session, self.user_id).restore(
+                        archived_default.id
+                    )
+                    category_id = archived_default.id
+                else:
+                    created_default = CategoryService(self.session, self.user_id).create(
+                        CategoryIn(
+                            name=default_name, type=TransactionType.expense, order=0
+                        )
+                    )
+                    category_id = created_default.id
+
+        txn_in = TransactionIn(
+            date=txn_date,
+            occurred_at=now_local,
+            type=TransactionType.expense,
+            amount_cents=data.amount_cents,
+            category_id=category_id,
+            note=data.note,
+            tags=[],
+        )
+        return TransactionService(self.session, self.user_id).create(txn_in)
 
 
 class BalanceAnchorService:
