@@ -66,5 +66,15 @@
             <button type="submit" class="btn btn-primary btn-lg">Save changes</button>
         </div>
     </form>
+
+    <div id="txn-reimbursements" hx-get="/components/transaction-reimbursements?transaction_id={{ transaction.id }}"
+        hx-trigger="load, transactions-changed from:body"
+        hx-swap="outerHTML">
+        <div class="card shadow-hover">
+            <div class="card-body">
+                <p class="text-sm text-slate-500 dark:text-slate-400">Loading reimbursements…</p>
+            </div>
+        </div>
+    </div>
 </section>
 {% endblock %}

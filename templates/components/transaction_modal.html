@@ -34,14 +34,14 @@
                 <optgroup label="Income">
                     {% for category in categories %}
                     {% if category.type.value == 'income' %}
-                    <option value="{{ category.id }}">{{ category.name }}</option>
+                    <option value="{{ category.id }}" data-category-type="income">{{ category.name }}</option>
                     {% endif %}
                     {% endfor %}
                 </optgroup>
                 <optgroup label="Expense">
                     {% for category in categories %}
                     {% if category.type.value == 'expense' %}
-                    <option value="{{ category.id }}">{{ category.name }}</option>
+                    <option value="{{ category.id }}" data-category-type="expense">{{ category.name }}</option>
                     {% endif %}
                     {% endfor %}
                 </optgroup>
@@ -50,6 +50,14 @@
         <label class="space-y-1 text-sm font-semibold text-slate-600 dark:text-slate-300">
             Description
             <input type="text" name="note" placeholder="e.g., Lunch with Alex" class="input" required>
+        </label>
+        <label class="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300" data-reimbursement-field hidden>
+            <input type="checkbox" name="is_reimbursement" disabled
+                class="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-700 dark:bg-slate-900">
+            <span>
+                <span class="sm:hidden">Reimbursement (income only).</span>
+                <span class="hidden sm:inline">Reimbursement (income only). Excluded from Income KPIs and can be allocated to expenses.</span>
+            </span>
         </label>
         <div class="space-y-1 tag-input-container" data-available-tags='{{ tags|tojson|safe }}'>
             <span class="text-sm font-semibold text-slate-600 dark:text-slate-300">Tags</span>
@@ -66,3 +74,30 @@
         </div>
     </form>
 </dialog>
+
+<script>
+    (function () {
+        const form = document.getElementById("transaction-form");
+        if (!form) return;
+        const categorySelect = form.querySelector("select[name='category_id']");
+        const field = form.querySelector("[data-reimbursement-field]");
+        const checkbox = field ? field.querySelector("input[name='is_reimbursement']") : null;
+        if (!categorySelect || !field || !checkbox) return;
+
+        function syncReimbursementVisibility() {
+            const option = categorySelect.selectedOptions && categorySelect.selectedOptions[0];
+            const isIncome = option && option.dataset && option.dataset.categoryType === "income";
+            if (isIncome) {
+                field.hidden = false;
+                checkbox.disabled = false;
+            } else {
+                field.hidden = true;
+                checkbox.checked = false;
+                checkbox.disabled = true;
+            }
+        }
+
+        categorySelect.addEventListener("change", syncReimbursementVisibility);
+        syncReimbursementVisibility();
+    })();
+</script>

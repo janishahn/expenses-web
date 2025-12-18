@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 from database import Base
 from models import Category, RuleMatchType, TransactionType
 from schemas import CategoryIn, IngestTransactionIn, RuleIn
-from services import CategoryService, IngestCategoryAmbiguous, IngestService, RuleService
+from services import (
+    CategoryService,
+    IngestCategoryAmbiguous,
+    IngestService,
+    RuleService,
+)
 
 
 def test_ingest_creates_and_uses_uncategorized_default() -> None:
@@ -21,7 +26,9 @@ def test_ingest_creates_and_uses_uncategorized_default() -> None:
         assert txn.type == TransactionType.expense
         assert txn.category.name == "Uncategorized"
 
-        categories = session.scalars(select(Category).where(Category.type == txn.type)).all()
+        categories = session.scalars(
+            select(Category).where(Category.type == txn.type)
+        ).all()
         assert [c.name for c in categories] == ["Uncategorized"]
 
 
@@ -135,4 +142,3 @@ def test_ingest_can_be_recategorized_by_rules() -> None:
             )
         )
         assert txn.category_id == subs.id
-

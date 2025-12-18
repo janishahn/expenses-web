@@ -1,0 +1,151 @@
+{% from "macros.html" import icon %}
+<div id="txn-reimbursements"
+     hx-get="/components/transaction-reimbursements?transaction_id={{ transaction.id }}"
+     hx-trigger="transactions-changed from:body"
+     hx-swap="outerHTML"
+     class="card shadow-hover">
+    <div class="card-header flex items-center justify-between">
+        <div>
+            <p class="metric-eyebrow">Reimbursements</p>
+            <h3 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">
+                {% if transaction.type.value == 'income' %}Income reimbursement{% else %}Expense reimbursements{% endif %}
+            </h3>
+        </div>
+    </div>
+    <div class="card-body space-y-5">
+        {% if transaction.type.value == 'income' %}
+        <form hx-post="/transactions/{{ transaction.id }}/reimbursement" hx-swap="none"
+              hx-trigger="change from:input[name='is_reimbursement']"
+              class="space-y-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="/transactions/{{ transaction.id }}/edit">
+            <label class="flex items-start gap-3">
+                <input type="checkbox" name="is_reimbursement"
+                       class="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 dark:border-slate-700 dark:bg-slate-900"
+                       {% if transaction.is_reimbursement %}checked{% endif %}>
+                <span class="text-sm text-slate-700 dark:text-slate-300">
+                    Mark this income as a reimbursement (excluded from Income KPIs) and allocate it to expenses.
+                </span>
+            </label>
+        </form>
+
+        {% if transaction.is_reimbursement %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="rounded-xl border border-border p-3">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Allocated</p>
+                <p class="tabular font-semibold text-slate-800 dark:text-slate-100">{{ allocated_total_cents|currency }} €</p>
+            </div>
+            <div class="rounded-xl border border-border p-3">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Remaining</p>
+                <p class="tabular font-semibold {% if remaining_to_allocate_cents > 0 %}text-amber-600{% else %}text-slate-800 dark:text-slate-100{% endif %}">
+                    {{ remaining_to_allocate_cents|currency }} €
+                </p>
+            </div>
+        </div>
+
+        <div class="space-y-2">
+            <div class="flex items-center justify-between">
+                <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">Allocated to</p>
+                <span class="text-xs text-slate-500 dark:text-slate-400">{{ allocations_out|length }} expense{{ '' if allocations_out|length == 1 else 's' }}</span>
+            </div>
+            {% if allocations_out %}
+            <ul class="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-border overflow-hidden">
+                {% for alloc in allocations_out %}
+                {% set expense = alloc.expense_transaction %}
+                <li class="p-3 flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-800 dark:text-slate-100 truncate">
+                            {{ expense.note or (expense.category.name if expense.category else 'Expense') }}
+                        </p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">
+                            {{ expense.date|eurodate }} • {{ expense.category.name if expense.category else 'Uncategorized' }}
+                            {% if expense.deleted_at %} • Deleted{% endif %}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <p class="tabular font-semibold text-emerald-600">{{ alloc.amount_cents|currency }} €</p>
+                        <form hx-post="/reimbursements/allocations/{{ alloc.id }}/delete" hx-swap="none">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="/transactions/{{ transaction.id }}/edit">
+                            <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Remove allocation"
+                                    hx-confirm="Remove this allocation?">
+                                {{ icon("x", class="icon") }}
+                            </button>
+                        </form>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-slate-500 dark:text-slate-400">No allocations yet.</p>
+            {% endif %}
+        </div>
+
+        <div class="space-y-2">
+            <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">Allocate to an expense</p>
+            <form hx-get="/components/reimbursement-expense-search" hx-target="#reimbursement-search-results"
+                  hx-swap="innerHTML" class="flex flex-col sm:flex-row gap-2">
+                <input type="hidden" name="reimbursement_id" value="{{ transaction.id }}">
+                <input type="text" name="q" value="" placeholder="Search by note or category…" class="input flex-1">
+                <button type="submit" class="btn btn-secondary btn-sm w-full sm:w-auto">Search</button>
+            </form>
+            <div id="reimbursement-search-results"></div>
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500 dark:text-slate-400">
+            Mark this income as a reimbursement to allocate it to expenses and reduce their net cost in KPIs.
+        </p>
+        {% endif %}
+
+        {% else %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="rounded-xl border border-border p-3">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Reimbursed</p>
+                <p class="tabular font-semibold text-emerald-600">{{ reimbursed_total_cents|currency }} €</p>
+            </div>
+            <div class="rounded-xl border border-border p-3">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Net cost</p>
+                <p class="tabular font-semibold text-slate-800 dark:text-slate-100">{{ net_cost_cents|currency }} €</p>
+            </div>
+        </div>
+
+        <div class="space-y-2">
+            <div class="flex items-center justify-between">
+                <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">Reimbursements applied</p>
+                <span class="text-xs text-slate-500 dark:text-slate-400">{{ allocations_in|length }} allocation{{ '' if allocations_in|length == 1 else 's' }}</span>
+            </div>
+            {% if allocations_in %}
+            <ul class="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-border overflow-hidden">
+                {% for alloc in allocations_in %}
+                {% set reimb = alloc.reimbursement_transaction %}
+                <li class="p-3 flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <p class="font-semibold text-slate-800 dark:text-slate-100 truncate">
+                            {{ reimb.note or (reimb.category.name if reimb.category else 'Reimbursement') }}
+                        </p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">
+                            {{ reimb.date|eurodate }} • {{ reimb.category.name if reimb.category else 'Uncategorized' }}
+                            {% if reimb.deleted_at %} • Deleted{% endif %}
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <p class="tabular font-semibold text-emerald-600">{{ alloc.amount_cents|currency }} €</p>
+                        <form hx-post="/reimbursements/allocations/{{ alloc.id }}/delete" hx-swap="none">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="/transactions/{{ transaction.id }}/edit">
+                            <button type="submit" class="btn btn-ghost btn-icon" data-tooltip="Remove allocation"
+                                    hx-confirm="Remove this allocation?">
+                                {{ icon("x", class="icon") }}
+                            </button>
+                        </form>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-sm text-slate-500 dark:text-slate-400">No reimbursements linked to this expense.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>

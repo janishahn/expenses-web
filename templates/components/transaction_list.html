@@ -17,6 +17,9 @@
                 <div class="flex-1">
                     <p class="font-semibold text-slate-800 dark:text-slate-100">
                         {{ txn.note or (txn.category.name if txn.category else "Untitled") }}
+                        {% if txn.type.value == 'income' and txn.is_reimbursement %}
+                        <span class="ml-1 inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900">Reimbursement</span>
+                        {% endif %}
                         {% for tag in txn.tags %}
                         <span class="ml-1 inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">{{ tag.name }}</span>
                         {% endfor %}

@@ -72,6 +72,14 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
             date_value = parse_date((raw.get("Date") or "").strip())
             type_raw = (raw.get("Type") or "").strip().lower()
             type_value = TransactionType(type_raw)
+            is_reimbursement_raw = (raw.get("IsReimbursement") or "").strip().lower()
+            is_reimbursement_value = is_reimbursement_raw in {
+                "1",
+                "true",
+                "yes",
+                "y",
+                "on",
+            }
             amount_value = parse_amount(raw.get("Amount") or "0")
             category = (raw.get("Category") or "").strip()
             note_raw = raw.get("Note") or ""
@@ -80,6 +88,7 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
                 CSVRow(
                     date=date_value,
                     type=type_value,
+                    is_reimbursement=is_reimbursement_value,
                     amount_cents=amount_value,
                     category=category,
                     note=note,
@@ -93,12 +102,13 @@ def parse_csv(content: str) -> tuple[list[CSVRow], list[str]]:
 def export_transactions(transactions: Sequence[Transaction]) -> str:
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Type", "Amount", "Category", "Note"])
+    writer.writerow(["Date", "Type", "IsReimbursement", "Amount", "Category", "Note"])
     for txn in transactions:
         writer.writerow(
             [
                 txn.date.isoformat(),
                 txn.type.value,
+                "1" if txn.is_reimbursement else "0",
                 f"{txn.amount_cents / 100:.2f}",
                 sanitize_csv_value(txn.category.name if txn.category else ""),
                 sanitize_csv_value(txn.note or ""),

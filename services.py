@@ -7,8 +7,8 @@ from datetime import date, datetime, time, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, delete, func, select, tuple_, update
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import case, delete, func, or_, select, tuple_, update
+from sqlalchemy.orm import Session, aliased, joinedload
 
 from rapidfuzz.distance import Levenshtein
 
@@ -21,6 +21,7 @@ from models import (
     Category,
     CurrencyCode,
     MonthlyRollup,
+    ReimbursementAllocation,
     RecurringRule,
     Rule,
     RuleMatchType,
@@ -45,17 +46,77 @@ from schemas import (
 )
 
 
-def update_monthly_rollup(
-    session: Session,
-    user_id: int,
-    txn_date: date,
-    txn_type: TransactionType,
-    amount_cents: int,
-    increment: bool = True,
+def _month_start(year: int, month: int) -> date:
+    return date(year, month, 1)
+
+
+def _month_end(year: int, month: int) -> date:
+    if month == 12:
+        return date(year + 1, 1, 1) - date.resolution
+    return date(year, month + 1, 1) - date.resolution
+
+
+def recompute_monthly_rollup(
+    session: Session, user_id: int, year: int, month: int
 ) -> None:
-    year = txn_date.year
-    month = txn_date.month
-    sign = 1 if increment else -1
+    start = _month_start(year, month)
+    end = _month_end(year, month)
+
+    income = int(
+        session.execute(
+            select(func.coalesce(func.sum(Transaction.amount_cents), 0)).where(
+                Transaction.user_id == user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.income,
+                Transaction.is_reimbursement.is_(False),
+                Transaction.date.between(start, end),
+            )
+        ).scalar_one()
+        or 0
+    )
+
+    expense_gross = int(
+        session.execute(
+            select(func.coalesce(func.sum(Transaction.amount_cents), 0)).where(
+                Transaction.user_id == user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.expense,
+                Transaction.date.between(start, end),
+            )
+        ).scalar_one()
+        or 0
+    )
+
+    ExpenseTxn = aliased(Transaction)
+    ReimbursementTxn = aliased(Transaction)
+    reimbursed = int(
+        session.execute(
+            select(func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0))
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == user_id,
+                ExpenseTxn.user_id == user_id,
+                ReimbursementTxn.user_id == user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.date.between(start, end),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+        ).scalar_one()
+        or 0
+    )
+
+    expenses = max(0, expense_gross - reimbursed)
 
     rollup = session.scalar(
         select(MonthlyRollup).where(
@@ -64,6 +125,10 @@ def update_monthly_rollup(
             MonthlyRollup.month == month,
         )
     )
+    if income == 0 and expenses == 0:
+        if rollup:
+            session.delete(rollup)
+        return
 
     if not rollup:
         rollup = MonthlyRollup(
@@ -76,10 +141,14 @@ def update_monthly_rollup(
         session.add(rollup)
         session.flush()
 
-    if txn_type == TransactionType.income:
-        rollup.income_cents = max(0, rollup.income_cents + sign * amount_cents)
-    else:
-        rollup.expense_cents = max(0, rollup.expense_cents + sign * amount_cents)
+    rollup.income_cents = income
+    rollup.expense_cents = expenses
+
+
+def recompute_monthly_rollup_for_date(
+    session: Session, user_id: int, txn_date: date
+) -> None:
+    recompute_monthly_rollup(session, user_id, txn_date.year, txn_date.month)
 
 
 def get_current_user_id() -> int:
@@ -96,37 +165,17 @@ def rebuild_monthly_rollups(session: Session, user_id: int) -> None:
 
     year = func.strftime("%Y", Transaction.date).label("year")
     month = func.strftime("%m", Transaction.date).label("month")
-    stmt = (
-        select(
-            year,
-            month,
-            Transaction.type,
-            func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
-        )
-        .where(
-            Transaction.user_id == user_id,
-            Transaction.deleted_at.is_(None),
-        )
-        .group_by(year, month, Transaction.type)
-    )
+    keys = session.execute(
+        select(year, month)
+        .where(Transaction.user_id == user_id, Transaction.deleted_at.is_(None))
+        .group_by(year, month)
+    ).all()
 
-    rollups: dict[tuple[int, int], MonthlyRollup] = {}
-    for row in session.execute(stmt):
+    for row in keys:
         y = int(row.year)
         m = int(row.month)
-        key = (y, m)
-        rollup = rollups.get(key)
-        if not rollup:
-            rollup = MonthlyRollup(
-                user_id=user_id, year=y, month=m, income_cents=0, expense_cents=0
-            )
-            rollups[key] = rollup
-        if row.type == TransactionType.income:
-            rollup.income_cents = int(row.total)
-        else:
-            rollup.expense_cents = int(row.total)
+        recompute_monthly_rollup(session, user_id, y, m)
 
-    session.add_all(rollups.values())
     session.commit()
 
 
@@ -495,11 +544,19 @@ class TransactionService:
             raise ValueError("Category not found")
         if category.type != data.type:
             raise ValueError("Category type mismatch")
+        if data.is_reimbursement and data.type != TransactionType.income:
+            raise ValueError("Reimbursements must be income transactions")
+        is_reimbursement = (
+            bool(data.is_reimbursement)
+            if data.type == TransactionType.income
+            else False
+        )
         txn = Transaction(
             user_id=self.user_id,
             date=data.date,
             occurred_at=data.occurred_at,
             type=data.type,
+            is_reimbursement=is_reimbursement,
             amount_cents=data.amount_cents,
             category_id=data.category_id,
             note=data.note,
@@ -517,14 +574,8 @@ class TransactionService:
 
         self.session.add(txn)
         RuleService(self.session, self.user_id).apply_rules(txn)
-        update_monthly_rollup(
-            self.session,
-            self.user_id,
-            data.date,
-            data.type,
-            data.amount_cents,
-            increment=True,
-        )
+        self.session.flush()
+        recompute_monthly_rollup_for_date(self.session, self.user_id, data.date)
         period = Period("transaction", data.date, data.date)
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(period)
@@ -557,23 +608,37 @@ class TransactionService:
 
         old_date = txn.date
         old_type = txn.type
-        old_amount = txn.amount_cents
-        update_monthly_rollup(
-            self.session,
-            self.user_id,
-            old_date,
-            old_type,
-            old_amount,
-            increment=False,
-        )
-        update_monthly_rollup(
-            self.session,
-            self.user_id,
-            data.date,
-            data.type,
-            data.amount_cents,
-            increment=True,
-        )
+        old_is_reimbursement = txn.is_reimbursement
+
+        if old_type == TransactionType.expense and data.type == TransactionType.income:
+            has_allocations_in = int(
+                self.session.execute(
+                    select(func.count(ReimbursementAllocation.id)).where(
+                        ReimbursementAllocation.user_id == self.user_id,
+                        ReimbursementAllocation.expense_transaction_id == txn.id,
+                    )
+                ).scalar_one()
+                or 0
+            )
+            if has_allocations_in:
+                raise ValueError(
+                    "Cannot convert reimbursed expense to income; remove allocations first"
+                )
+
+        if old_type == TransactionType.income and data.type == TransactionType.expense:
+            has_allocations_out = int(
+                self.session.execute(
+                    select(func.count(ReimbursementAllocation.id)).where(
+                        ReimbursementAllocation.user_id == self.user_id,
+                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                    )
+                ).scalar_one()
+                or 0
+            )
+            if has_allocations_out:
+                raise ValueError(
+                    "Cannot convert reimbursement income to expense; remove allocations first"
+                )
 
         txn.date = data.date
         txn.occurred_at = data.occurred_at
@@ -581,6 +646,10 @@ class TransactionService:
         txn.amount_cents = data.amount_cents
         txn.category_id = data.category_id
         txn.note = data.note
+        if txn.type == TransactionType.income and data.is_reimbursement is not None:
+            txn.is_reimbursement = bool(data.is_reimbursement)
+        if txn.type == TransactionType.expense:
+            txn.is_reimbursement = False
 
         if data.tags is not None:
             tag_service = TagService(self.session, self.user_id)
@@ -594,6 +663,78 @@ class TransactionService:
             txn.tags = tags
 
         RuleService(self.session, self.user_id).apply_rules(txn)
+
+        allocations_deleted_expense_dates: list[date] = []
+        if (
+            old_type == TransactionType.income
+            and old_is_reimbursement
+            and txn.type == TransactionType.income
+            and not txn.is_reimbursement
+        ):
+            allocations_deleted_expense_dates = [
+                row[0]
+                for row in self.session.execute(
+                    select(Transaction.date)
+                    .join(
+                        ReimbursementAllocation,
+                        ReimbursementAllocation.expense_transaction_id
+                        == Transaction.id,
+                    )
+                    .where(
+                        ReimbursementAllocation.user_id == self.user_id,
+                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                    )
+                ).all()
+            ]
+            self.session.execute(
+                delete(ReimbursementAllocation).where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                )
+            )
+
+        if txn.type == TransactionType.expense:
+            reimbursed_total = int(
+                self.session.execute(
+                    select(
+                        func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
+                    ).where(
+                        ReimbursementAllocation.user_id == self.user_id,
+                        ReimbursementAllocation.expense_transaction_id == txn.id,
+                    )
+                ).scalar_one()
+                or 0
+            )
+            if txn.amount_cents < reimbursed_total:
+                raise ValueError("Expense amount cannot be less than reimbursed total")
+
+        if txn.type == TransactionType.income and txn.is_reimbursement:
+            allocated_total = int(
+                self.session.execute(
+                    select(
+                        func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
+                    ).where(
+                        ReimbursementAllocation.user_id == self.user_id,
+                        ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                    )
+                ).scalar_one()
+                or 0
+            )
+            if txn.amount_cents < allocated_total:
+                raise ValueError(
+                    "Reimbursement amount cannot be less than allocated total"
+                )
+
+        self.session.flush()
+
+        months_to_recompute: set[tuple[int, int]] = {
+            (old_date.year, old_date.month),
+            (txn.date.year, txn.date.month),
+        }
+        for d in allocations_deleted_expense_dates:
+            months_to_recompute.add((d.year, d.month))
+        for y, m in months_to_recompute:
+            recompute_monthly_rollup(self.session, self.user_id, y, m)
 
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(Period("transaction", old_date, old_date))
@@ -680,18 +821,31 @@ class TransactionService:
             raise ValueError("Transaction not found")
         if txn.deleted_at is not None:
             return
-        update_monthly_rollup(
-            self.session,
-            self.user_id,
-            txn.date,
-            txn.type,
-            txn.amount_cents,
-            increment=False,
-        )
+        txn.deleted_at = datetime.utcnow()
+        self.session.flush()
+
+        months_to_recompute: set[tuple[int, int]] = {(txn.date.year, txn.date.month)}
+        if txn.type == TransactionType.income and txn.is_reimbursement:
+            expense_dates = self.session.execute(
+                select(Transaction.date)
+                .join(
+                    ReimbursementAllocation,
+                    ReimbursementAllocation.expense_transaction_id == Transaction.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                )
+            ).all()
+            for row in expense_dates:
+                d = row[0]
+                months_to_recompute.add((d.year, d.month))
+        for y, m in months_to_recompute:
+            recompute_monthly_rollup(self.session, self.user_id, y, m)
+
         period = Period("transaction", txn.date, txn.date)
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(period)
-        txn.deleted_at = datetime.utcnow()
         self.session.commit()
 
     def restore(self, transaction_id: int) -> None:
@@ -701,14 +855,25 @@ class TransactionService:
         if txn.deleted_at is None:
             return
         txn.deleted_at = None
-        update_monthly_rollup(
-            self.session,
-            self.user_id,
-            txn.date,
-            txn.type,
-            txn.amount_cents,
-            increment=True,
-        )
+        self.session.flush()
+        months_to_recompute: set[tuple[int, int]] = {(txn.date.year, txn.date.month)}
+        if txn.type == TransactionType.income and txn.is_reimbursement:
+            expense_dates = self.session.execute(
+                select(Transaction.date)
+                .join(
+                    ReimbursementAllocation,
+                    ReimbursementAllocation.expense_transaction_id == Transaction.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                )
+            ).all()
+            for row in expense_dates:
+                d = row[0]
+                months_to_recompute.add((d.year, d.month))
+        for y, m in months_to_recompute:
+            recompute_monthly_rollup(self.session, self.user_id, y, m)
         metrics = MetricsService(self.session, self.user_id)
         metrics._invalidate_period_cache(Period("transaction", txn.date, txn.date))
         self.session.commit()
@@ -724,6 +889,358 @@ class TransactionService:
             .limit(limit)
         )
         return self.session.scalars(stmt).all()
+
+
+class ReimbursementService:
+    def __init__(self, session: Session, user_id: Optional[int] = None) -> None:
+        self.session = session
+        self.user_id = user_id or get_current_user_id()
+
+    def set_reimbursement(self, transaction_id: int, is_reimbursement: bool) -> None:
+        txn = self.session.get(Transaction, transaction_id)
+        if not txn or txn.user_id != self.user_id:
+            raise ValueError("Transaction not found")
+        if txn.type != TransactionType.income:
+            raise ValueError("Only income transactions can be reimbursements")
+        if txn.is_reimbursement == is_reimbursement:
+            return
+
+        affected_expense_months: set[tuple[int, int]] = set()
+        if not is_reimbursement:
+            expense_dates = self.session.execute(
+                select(Transaction.date)
+                .join(
+                    ReimbursementAllocation,
+                    ReimbursementAllocation.expense_transaction_id == Transaction.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                )
+            ).all()
+            for row in expense_dates:
+                d = row[0]
+                affected_expense_months.add((d.year, d.month))
+            self.session.execute(
+                delete(ReimbursementAllocation).where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.reimbursement_transaction_id == txn.id,
+                )
+            )
+
+        txn.is_reimbursement = is_reimbursement
+        self.session.flush()
+
+        recompute_monthly_rollup_for_date(self.session, self.user_id, txn.date)
+        for y, m in affected_expense_months:
+            recompute_monthly_rollup(self.session, self.user_id, y, m)
+        self.session.commit()
+
+    def allocated_total_for_reimbursement(
+        self, reimbursement_transaction_id: int
+    ) -> int:
+        expense = aliased(Transaction)
+        return int(
+            self.session.execute(
+                select(func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0))
+                .join(
+                    expense,
+                    ReimbursementAllocation.expense_transaction_id == expense.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == reimbursement_transaction_id,
+                    expense.user_id == self.user_id,
+                    expense.deleted_at.is_(None),
+                    expense.type == TransactionType.expense,
+                )
+            ).scalar_one()
+            or 0
+        )
+
+    def reimbursed_total_for_expense(self, expense_transaction_id: int) -> int:
+        active_reimb = aliased(Transaction)
+        return int(
+            self.session.execute(
+                select(func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0))
+                .join(
+                    active_reimb,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == active_reimb.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.expense_transaction_id
+                    == expense_transaction_id,
+                    active_reimb.deleted_at.is_(None),
+                    active_reimb.type == TransactionType.income,
+                    active_reimb.is_reimbursement.is_(True),
+                )
+            ).scalar_one()
+            or 0
+        )
+
+    def allocations_for_reimbursement(
+        self, reimbursement_transaction_id: int
+    ) -> list[ReimbursementAllocation]:
+        expense = aliased(Transaction)
+        stmt = (
+            select(ReimbursementAllocation)
+            .join(expense, ReimbursementAllocation.expense_transaction_id == expense.id)
+            .options(
+                joinedload(ReimbursementAllocation.expense_transaction).joinedload(
+                    Transaction.category
+                )
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == reimbursement_transaction_id,
+            )
+            .order_by(expense.date.desc(), expense.id.desc())
+        )
+        return self.session.scalars(stmt).all()
+
+    def allocations_for_expense(
+        self, expense_transaction_id: int
+    ) -> list[ReimbursementAllocation]:
+        reimb = aliased(Transaction)
+        stmt = (
+            select(ReimbursementAllocation)
+            .join(
+                reimb, ReimbursementAllocation.reimbursement_transaction_id == reimb.id
+            )
+            .options(
+                joinedload(
+                    ReimbursementAllocation.reimbursement_transaction
+                ).joinedload(Transaction.category)
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ReimbursementAllocation.expense_transaction_id
+                == expense_transaction_id,
+            )
+            .order_by(reimb.date.desc(), reimb.id.desc())
+        )
+        return self.session.scalars(stmt).all()
+
+    def upsert_allocation(
+        self,
+        reimbursement_transaction_id: int,
+        expense_transaction_id: int,
+        amount_cents: int,
+    ) -> ReimbursementAllocation:
+        if amount_cents <= 0:
+            raise ValueError("Allocation amount must be positive")
+        reimbursement = self.session.get(Transaction, reimbursement_transaction_id)
+        if not reimbursement or reimbursement.user_id != self.user_id:
+            raise ValueError("Reimbursement transaction not found")
+        if reimbursement.deleted_at is not None:
+            raise ValueError("Reimbursement transaction is deleted")
+        if (
+            reimbursement.type != TransactionType.income
+            or not reimbursement.is_reimbursement
+        ):
+            raise ValueError("Transaction is not marked as a reimbursement")
+
+        expense = self.session.get(Transaction, expense_transaction_id)
+        if not expense or expense.user_id != self.user_id:
+            raise ValueError("Expense transaction not found")
+        if expense.deleted_at is not None:
+            raise ValueError("Expense transaction is deleted")
+        if expense.type != TransactionType.expense:
+            raise ValueError("Allocations can only target expense transactions")
+
+        existing = self.session.scalar(
+            select(ReimbursementAllocation).where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == reimbursement_transaction_id,
+                ReimbursementAllocation.expense_transaction_id
+                == expense_transaction_id,
+            )
+        )
+
+        allocated_other = int(
+            self.session.execute(
+                select(func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0))
+                .join(
+                    Transaction,
+                    ReimbursementAllocation.expense_transaction_id == Transaction.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == reimbursement_transaction_id,
+                    ReimbursementAllocation.expense_transaction_id
+                    != expense_transaction_id,
+                    Transaction.user_id == self.user_id,
+                    Transaction.deleted_at.is_(None),
+                    Transaction.type == TransactionType.expense,
+                )
+            ).scalar_one()
+            or 0
+        )
+        if allocated_other + amount_cents > reimbursement.amount_cents:
+            raise ValueError("Allocation exceeds reimbursement amount")
+
+        reimbursed_other = int(
+            self.session.execute(
+                select(
+                    func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0)
+                ).where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.expense_transaction_id
+                    == expense_transaction_id,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    != reimbursement_transaction_id,
+                )
+            ).scalar_one()
+            or 0
+        )
+        if reimbursed_other + amount_cents > expense.amount_cents:
+            raise ValueError("Allocation exceeds expense amount")
+
+        if existing:
+            existing.amount_cents = amount_cents
+            allocation = existing
+        else:
+            allocation = ReimbursementAllocation(
+                user_id=self.user_id,
+                reimbursement_transaction_id=reimbursement_transaction_id,
+                expense_transaction_id=expense_transaction_id,
+                amount_cents=amount_cents,
+            )
+            self.session.add(allocation)
+
+        self.session.flush()
+        recompute_monthly_rollup_for_date(self.session, self.user_id, expense.date)
+        self.session.commit()
+        self.session.refresh(allocation)
+        return allocation
+
+    def delete_allocation(self, allocation_id: int) -> None:
+        allocation = self.session.get(ReimbursementAllocation, allocation_id)
+        if not allocation or allocation.user_id != self.user_id:
+            raise ValueError("Allocation not found")
+        expense = self.session.get(Transaction, allocation.expense_transaction_id)
+        expense_date = expense.date if expense else None
+        self.session.delete(allocation)
+        self.session.flush()
+        if expense_date:
+            recompute_monthly_rollup_for_date(self.session, self.user_id, expense_date)
+        self.session.commit()
+
+    def search_expenses_for_reimbursement(
+        self, reimbursement_transaction_id: int, *, query: str, limit: int = 25
+    ) -> list[dict[str, object]]:
+        reimbursement = self.session.get(Transaction, reimbursement_transaction_id)
+        if not reimbursement or reimbursement.user_id != self.user_id:
+            raise ValueError("Reimbursement transaction not found")
+        if reimbursement.deleted_at is not None:
+            raise ValueError("Reimbursement transaction is deleted")
+        if (
+            reimbursement.type != TransactionType.income
+            or not reimbursement.is_reimbursement
+        ):
+            raise ValueError("Transaction is not marked as a reimbursement")
+
+        stmt = (
+            select(Transaction)
+            .options(joinedload(Transaction.category))
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.expense,
+            )
+        )
+        query_clean = query.strip()
+        if query_clean:
+            like = f"%{query_clean.lower()}%"
+            stmt = stmt.join(Category, Category.id == Transaction.category_id).where(
+                or_(
+                    func.lower(func.coalesce(Transaction.note, "")).like(like),
+                    func.lower(Category.name).like(like),
+                )
+            )
+        stmt = stmt.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(
+            limit
+        )
+        expenses = self.session.scalars(stmt).all()
+        if not expenses:
+            return []
+
+        expense_ids = [e.id for e in expenses]
+
+        active_reimb = aliased(Transaction)
+        reimbursed_totals = {
+            int(r.expense_transaction_id): int(r.total or 0)
+            for r in self.session.execute(
+                select(
+                    ReimbursementAllocation.expense_transaction_id,
+                    func.coalesce(
+                        func.sum(ReimbursementAllocation.amount_cents), 0
+                    ).label("total"),
+                )
+                .join(
+                    active_reimb,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == active_reimb.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.expense_transaction_id.in_(expense_ids),
+                    active_reimb.deleted_at.is_(None),
+                    active_reimb.type == TransactionType.income,
+                    active_reimb.is_reimbursement.is_(True),
+                )
+                .group_by(ReimbursementAllocation.expense_transaction_id)
+            )
+        }
+
+        allocated_to_this = {
+            int(r.expense_transaction_id): int(r.total or 0)
+            for r in self.session.execute(
+                select(
+                    ReimbursementAllocation.expense_transaction_id,
+                    func.coalesce(
+                        func.sum(ReimbursementAllocation.amount_cents), 0
+                    ).label("total"),
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == reimbursement_transaction_id,
+                    ReimbursementAllocation.expense_transaction_id.in_(expense_ids),
+                )
+                .group_by(ReimbursementAllocation.expense_transaction_id)
+            )
+        }
+
+        remaining_reimbursement = max(
+            0,
+            reimbursement.amount_cents
+            - self.allocated_total_for_reimbursement(reimbursement_transaction_id),
+        )
+
+        results: list[dict[str, object]] = []
+        for expense in expenses:
+            reimbursed_total = int(reimbursed_totals.get(expense.id, 0))
+            remaining_unreimbursed = max(0, expense.amount_cents - reimbursed_total)
+            suggested = min(remaining_reimbursement, remaining_unreimbursed)
+            results.append(
+                {
+                    "expense": expense,
+                    "reimbursed_total_cents": reimbursed_total,
+                    "remaining_unreimbursed_cents": remaining_unreimbursed,
+                    "allocated_to_this_cents": int(
+                        allocated_to_this.get(expense.id, 0)
+                    ),
+                    "suggested_amount_cents": suggested,
+                }
+            )
+        return results
 
 
 class IngestCategoryNotFound(ValueError):
@@ -839,7 +1356,9 @@ class IngestService:
                     )
                     category_id = archived_default.id
                 else:
-                    created_default = CategoryService(self.session, self.user_id).create(
+                    created_default = CategoryService(
+                        self.session, self.user_id
+                    ).create(
                         CategoryIn(
                             name=default_name, type=TransactionType.expense, order=0
                         )
@@ -1000,19 +1519,26 @@ class MetricsService:
             return date(year, month, 1)
 
         def kpis_from_transactions(start: date, end: date) -> tuple[int, int]:
-            stmt = select(
+            income_stmt = select(
                 func.coalesce(
                     func.sum(
                         case(
                             (
-                                Transaction.type == TransactionType.income,
+                                (Transaction.type == TransactionType.income)
+                                & (Transaction.is_reimbursement.is_(False)),
                                 Transaction.amount_cents,
                             ),
                             else_=0,
                         )
                     ),
                     0,
-                ).label("income"),
+                ).label("income")
+            ).where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.date.between(start, end),
+            )
+            expense_stmt = select(
                 func.coalesce(
                     func.sum(
                         case(
@@ -1024,16 +1550,56 @@ class MetricsService:
                         )
                     ),
                     0,
-                ).label("expenses"),
+                ).label("expenses")
             ).where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
                 Transaction.date.between(start, end),
             )
             if tag_ids:
-                stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
-            row = self.session.execute(stmt).one()
-            return int(row.income), int(row.expenses)
+                income_stmt = income_stmt.where(
+                    Transaction.tags.any(Tag.id.in_(tag_ids))
+                )
+                expense_stmt = expense_stmt.where(
+                    Transaction.tags.any(Tag.id.in_(tag_ids))
+                )
+
+            income = int(self.session.execute(income_stmt).scalar_one() or 0)
+            expense_gross = int(self.session.execute(expense_stmt).scalar_one() or 0)
+
+            ExpenseTxn = aliased(Transaction)
+            ReimbursementTxn = aliased(Transaction)
+            reimbursed_stmt = (
+                select(func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0))
+                .join(
+                    ExpenseTxn,
+                    ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+                )
+                .join(
+                    ReimbursementTxn,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == ReimbursementTxn.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ExpenseTxn.user_id == self.user_id,
+                    ReimbursementTxn.user_id == self.user_id,
+                    ExpenseTxn.deleted_at.is_(None),
+                    ExpenseTxn.type == TransactionType.expense,
+                    ExpenseTxn.date.between(start, end),
+                    ReimbursementTxn.deleted_at.is_(None),
+                    ReimbursementTxn.type == TransactionType.income,
+                    ReimbursementTxn.is_reimbursement.is_(True),
+                )
+            )
+            if tag_ids:
+                reimbursed_stmt = reimbursed_stmt.where(
+                    ExpenseTxn.tags.any(Tag.id.in_(tag_ids))
+                )
+            reimbursed = int(self.session.execute(reimbursed_stmt).scalar_one() or 0)
+
+            expenses = max(0, expense_gross - reimbursed)
+            return income, expenses
 
         # Balance calculation currently ignores tags because it's account-level.
         # Ideally, we should support calculating balance for a tag (income - expense),
@@ -1151,19 +1717,26 @@ class MetricsService:
             return date(year, month, 1)
 
         def income_expense_between(start: date, end: date) -> tuple[int, int]:
-            stmt = select(
+            income_stmt = select(
                 func.coalesce(
                     func.sum(
                         case(
                             (
-                                Transaction.type == TransactionType.income,
+                                (Transaction.type == TransactionType.income)
+                                & (Transaction.is_reimbursement.is_(False)),
                                 Transaction.amount_cents,
                             ),
                             else_=0,
                         )
                     ),
                     0,
-                ).label("income"),
+                ).label("income")
+            ).where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.date.between(start, end),
+            )
+            expense_stmt = select(
                 func.coalesce(
                     func.sum(
                         case(
@@ -1175,16 +1748,56 @@ class MetricsService:
                         )
                     ),
                     0,
-                ).label("expenses"),
+                ).label("expenses")
             ).where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
                 Transaction.date.between(start, end),
             )
             if tag_ids:
-                stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
-            row = self.session.execute(stmt).one()
-            return int(row.income), int(row.expenses)
+                income_stmt = income_stmt.where(
+                    Transaction.tags.any(Tag.id.in_(tag_ids))
+                )
+                expense_stmt = expense_stmt.where(
+                    Transaction.tags.any(Tag.id.in_(tag_ids))
+                )
+
+            income = int(self.session.execute(income_stmt).scalar_one() or 0)
+            expense_gross = int(self.session.execute(expense_stmt).scalar_one() or 0)
+
+            ExpenseTxn = aliased(Transaction)
+            ReimbursementTxn = aliased(Transaction)
+            reimbursed_stmt = (
+                select(func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0))
+                .join(
+                    ExpenseTxn,
+                    ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+                )
+                .join(
+                    ReimbursementTxn,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == ReimbursementTxn.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ExpenseTxn.user_id == self.user_id,
+                    ReimbursementTxn.user_id == self.user_id,
+                    ExpenseTxn.deleted_at.is_(None),
+                    ExpenseTxn.type == TransactionType.expense,
+                    ExpenseTxn.date.between(start, end),
+                    ReimbursementTxn.deleted_at.is_(None),
+                    ReimbursementTxn.type == TransactionType.income,
+                    ReimbursementTxn.is_reimbursement.is_(True),
+                )
+            )
+            if tag_ids:
+                reimbursed_stmt = reimbursed_stmt.where(
+                    ExpenseTxn.tags.any(Tag.id.in_(tag_ids))
+                )
+            reimbursed = int(self.session.execute(reimbursed_stmt).scalar_one() or 0)
+
+            expenses = max(0, expense_gross - reimbursed)
+            return income, expenses
 
         def build_points(values: list[int]) -> str:
             if not values:
@@ -1307,32 +1920,111 @@ class MetricsService:
         if period_key in self._category_breakdown_cache:
             return self._category_breakdown_cache[period_key]
 
-        stmt = (
-            select(Category.name, func.sum(Transaction.amount_cents).label("total"))
+        if transaction_type == TransactionType.income:
+            stmt = (
+                select(Category.name, func.sum(Transaction.amount_cents).label("total"))
+                .join(Category, Category.id == Transaction.category_id)
+                .where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.deleted_at.is_(None),
+                    Transaction.type == TransactionType.income,
+                    Transaction.is_reimbursement.is_(False),
+                    Transaction.date.between(period.start, period.end),
+                )
+                .group_by(Category.name)
+                .order_by(func.sum(Transaction.amount_cents).desc())
+            )
+            if category_ids:
+                stmt = stmt.where(Transaction.category_id.in_(category_ids))
+            if tag_ids:
+                stmt = stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+
+            rows = self.session.execute(stmt).all()
+            total = sum(row.total or 0 for row in rows)
+            breakdown = []
+            for row in rows:
+                amount = int(row.total or 0)
+                percent = (amount / total * 100) if total else 0
+                breakdown.append(
+                    {"name": row.name, "amount_cents": amount, "percent": percent}
+                )
+            self._category_breakdown_cache[period_key] = breakdown
+            return breakdown
+
+        gross_stmt = (
+            select(
+                Category.id.label("category_id"),
+                Category.name.label("name"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("gross"),
+            )
             .join(Category, Category.id == Transaction.category_id)
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
-                Transaction.type == transaction_type,
+                Transaction.type == TransactionType.expense,
                 Transaction.date.between(period.start, period.end),
             )
-            .group_by(Category.name)
-            .order_by(func.sum(Transaction.amount_cents).desc())
+            .group_by(Category.id, Category.name)
         )
         if category_ids:
-            stmt = stmt.where(Transaction.category_id.in_(category_ids))
+            gross_stmt = gross_stmt.where(Transaction.category_id.in_(category_ids))
         if tag_ids:
-            stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
+            gross_stmt = gross_stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+        gross_rows = self.session.execute(gross_stmt).all()
 
-        rows = self.session.execute(stmt).all()
-        total = sum(row.total or 0 for row in rows)
-        breakdown = []
-        for row in rows:
-            amount = row.total or 0
-            percent = (amount / total * 100) if total else 0
-            breakdown.append(
-                {"name": row.name, "amount_cents": amount, "percent": percent}
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        reimb_stmt = (
+            select(
+                ExpenseTxn.category_id.label("category_id"),
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "reimbursed"
+                ),
             )
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.date.between(period.start, period.end),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by(ExpenseTxn.category_id)
+        )
+        if category_ids:
+            reimb_stmt = reimb_stmt.where(ExpenseTxn.category_id.in_(category_ids))
+        if tag_ids:
+            reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+
+        reimb_rows = self.session.execute(reimb_stmt).all()
+        reimb_map = {row.category_id: int(row.reimbursed or 0) for row in reimb_rows}
+
+        breakdown = []
+        total = 0
+        for row in gross_rows:
+            gross = int(row.gross or 0)
+            reimbursed = int(reimb_map.get(row.category_id, 0))
+            net = max(0, gross - reimbursed)
+            if net <= 0:
+                continue
+            total += net
+            breakdown.append({"name": row.name, "amount_cents": net, "percent": 0})
+        breakdown.sort(key=lambda r: int(r["amount_cents"]), reverse=True)
+        for item in breakdown:
+            amount = int(item["amount_cents"])
+            item["percent"] = (amount / total * 100) if total else 0
         self._category_breakdown_cache[period_key] = breakdown
         return breakdown
 
@@ -1371,39 +2063,98 @@ class InsightsService:
         if len(months) > months_back:
             months = months[-months_back:]
 
-        stmt = (
+        base_start = months[0]
+        base_end = period.end
+
+        income_stmt = (
             select(
                 func.strftime("%Y", Transaction.date).label("year"),
                 func.strftime("%m", Transaction.date).label("month"),
-                Transaction.type,
                 func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
             )
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
-                Transaction.date.between(months[0], period.end),
+                Transaction.type == TransactionType.income,
+                Transaction.is_reimbursement.is_(False),
+                Transaction.date.between(base_start, base_end),
             )
-            .group_by("year", "month", Transaction.type)
+            .group_by("year", "month")
+        )
+        expense_gross_stmt = (
+            select(
+                func.strftime("%Y", Transaction.date).label("year"),
+                func.strftime("%m", Transaction.date).label("month"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
+            )
+            .where(
+                Transaction.user_id == self.user_id,
+                Transaction.deleted_at.is_(None),
+                Transaction.type == TransactionType.expense,
+                Transaction.date.between(base_start, base_end),
+            )
+            .group_by("year", "month")
         )
         if tag_ids:
-            stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
+            income_stmt = income_stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+            expense_gross_stmt = expense_gross_stmt.where(
+                Transaction.tags.any(Tag.id.in_(tag_ids))
+            )
 
-        totals: dict[tuple[int, int], dict[str, int]] = {}
-        for row in self.session.execute(stmt):
-            y = int(row.year)
-            m = int(row.month)
-            key = (y, m)
-            bucket = totals.setdefault(key, {"income": 0, "expense": 0})
-            if row.type == TransactionType.income:
-                bucket["income"] = int(row.total)
-            else:
-                bucket["expense"] = int(row.total)
+        income_totals: dict[tuple[int, int], int] = {}
+        for row in self.session.execute(income_stmt):
+            income_totals[(int(row.year), int(row.month))] = int(row.total or 0)
+
+        expense_gross_totals: dict[tuple[int, int], int] = {}
+        for row in self.session.execute(expense_gross_stmt):
+            expense_gross_totals[(int(row.year), int(row.month))] = int(row.total or 0)
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        reimb_stmt = (
+            select(
+                func.strftime("%Y", ExpenseTxn.date).label("year"),
+                func.strftime("%m", ExpenseTxn.date).label("month"),
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "total"
+                ),
+            )
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.date.between(base_start, base_end),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by("year", "month")
+        )
+        if tag_ids:
+            reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+
+        reimb_totals: dict[tuple[int, int], int] = {}
+        for row in self.session.execute(reimb_stmt):
+            reimb_totals[(int(row.year), int(row.month))] = int(row.total or 0)
 
         out: list[dict[str, object]] = []
         for month in months:
-            bucket = totals.get((month.year, month.month), {"income": 0, "expense": 0})
-            income = int(bucket["income"])
-            expense = int(bucket["expense"])
+            key = (month.year, month.month)
+            income = income_totals.get(key, 0)
+            expense_gross = expense_gross_totals.get(key, 0)
+            reimbursed = reimb_totals.get(key, 0)
+            expense = max(0, expense_gross - reimbursed)
             out.append(
                 {
                     "year": month.year,
@@ -1441,6 +2192,8 @@ class InsightsService:
             .order_by(func.sum(Transaction.amount_cents).desc())
             .limit(limit)
         )
+        if transaction_type == TransactionType.income:
+            stmt = stmt.where(Transaction.is_reimbursement.is_(False))
         return [
             {"id": int(r.tag_id), "name": str(r.tag_name), "amount_cents": int(r.total)}
             for r in self.session.execute(stmt)
@@ -1477,19 +2230,65 @@ class InsightsService:
             .group_by("year", "month")
         )
         if tag_ids:
-            stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
-        totals = {
-            (int(r.year), int(r.month)): int(r.total)
+            stmt = stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+
+        gross_totals = {
+            (int(r.year), int(r.month)): int(r.total or 0)
             for r in self.session.execute(stmt)
         }
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        reimb_stmt = (
+            select(
+                func.strftime("%Y", ExpenseTxn.date).label("year"),
+                func.strftime("%m", ExpenseTxn.date).label("month"),
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "total"
+                ),
+            )
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.category_id == category_id,
+                ExpenseTxn.date.between(start_month, end),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by("year", "month")
+        )
+        if tag_ids:
+            reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+        reimb_totals = {
+            (int(r.year), int(r.month)): int(r.total or 0)
+            for r in self.session.execute(reimb_stmt)
+        }
+
         out: list[dict[str, object]] = []
         for month in months:
+            key = (month.year, month.month)
+            gross = gross_totals.get(key, 0)
+            reimbursed = reimb_totals.get(key, 0)
+            net = max(0, gross - reimbursed)
             out.append(
                 {
                     "year": month.year,
                     "month": month.month,
                     "label": f"{month.year:04d}-{month.month:02d}",
-                    "amount_cents": totals.get((month.year, month.month), 0),
+                    "amount_cents": net,
                 }
             )
         return out
@@ -1503,7 +2302,7 @@ class InsightsService:
         prev = Period("prev", prev_start, prev_end)
 
         def totals_for(p: Period) -> dict[int, int]:
-            stmt = (
+            gross_stmt = (
                 select(
                     Transaction.category_id,
                     func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
@@ -1517,10 +2316,54 @@ class InsightsService:
                 .group_by(Transaction.category_id)
             )
             if tag_ids:
-                stmt = stmt.join(Transaction.tags).where(Tag.id.in_(tag_ids))
-            return {
-                int(r.category_id): int(r.total) for r in self.session.execute(stmt)
+                gross_stmt = gross_stmt.where(Transaction.tags.any(Tag.id.in_(tag_ids)))
+            gross = {
+                int(r.category_id): int(r.total or 0)
+                for r in self.session.execute(gross_stmt)
             }
+
+            ExpenseTxn = aliased(Transaction)
+            ReimbursementTxn = aliased(Transaction)
+            reimb_stmt = (
+                select(
+                    ExpenseTxn.category_id.label("category_id"),
+                    func.coalesce(
+                        func.sum(ReimbursementAllocation.amount_cents), 0
+                    ).label("total"),
+                )
+                .join(
+                    ExpenseTxn,
+                    ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+                )
+                .join(
+                    ReimbursementTxn,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == ReimbursementTxn.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ExpenseTxn.user_id == self.user_id,
+                    ReimbursementTxn.user_id == self.user_id,
+                    ExpenseTxn.deleted_at.is_(None),
+                    ExpenseTxn.type == TransactionType.expense,
+                    ExpenseTxn.date.between(p.start, p.end),
+                    ReimbursementTxn.deleted_at.is_(None),
+                    ReimbursementTxn.type == TransactionType.income,
+                    ReimbursementTxn.is_reimbursement.is_(True),
+                )
+                .group_by(ExpenseTxn.category_id)
+            )
+            if tag_ids:
+                reimb_stmt = reimb_stmt.where(ExpenseTxn.tags.any(Tag.id.in_(tag_ids)))
+            reimb = {
+                int(r.category_id): int(r.total or 0)
+                for r in self.session.execute(reimb_stmt)
+            }
+
+            net: dict[int, int] = {}
+            for cid, gross_amount in gross.items():
+                net[cid] = max(0, gross_amount - reimb.get(cid, 0))
+            return net
 
         cur_totals = totals_for(period)
         prev_totals = totals_for(prev)
@@ -1745,10 +2588,13 @@ class CSVService:
             category_id = lookup.get((row.type, row.category.lower()))
             if not category_id:
                 errors.append(f"Missing category '{row.category}' for {row.type.value}")
+            if row.is_reimbursement and row.type != TransactionType.income:
+                errors.append("IsReimbursement can only be set for income transactions")
             preview_rows.append(
                 {
                     "date": row.date,
                     "type": row.type.value,
+                    "is_reimbursement": row.is_reimbursement,
                     "amount_cents": row.amount_cents,
                     "category": row.category,
                     "note": row.note,
@@ -1763,6 +2609,7 @@ class CSVService:
             raise ValueError("; ".join(errors))
         dates = set()
         rule_service = RuleService(self.session, self.user_id)
+        months: set[tuple[int, int]] = set()
         for row in preview_rows:
             txn_type = TransactionType(row["type"])
             txn = Transaction(
@@ -1770,21 +2617,20 @@ class CSVService:
                 date=row["date"],
                 occurred_at=datetime.combine(row["date"], time(12, 0)),
                 type=txn_type,
+                is_reimbursement=bool(row["is_reimbursement"])
+                if txn_type == TransactionType.income
+                else False,
                 amount_cents=row["amount_cents"],
                 category_id=row["category_id"],
                 note=row["note"],
             )
             self.session.add(txn)
             rule_service.apply_rules(txn)
-            update_monthly_rollup(
-                self.session,
-                self.user_id,
-                row["date"],
-                txn_type,
-                row["amount_cents"],
-                increment=True,
-            )
             dates.add(row["date"])
+            months.add((row["date"].year, row["date"].month))
+        self.session.flush()
+        for y, m in months:
+            recompute_monthly_rollup(self.session, self.user_id, y, m)
         metrics = MetricsService(self.session, self.user_id)
         for txn_date in dates:
             period = Period("transaction", txn_date, txn_date)
@@ -1817,43 +2663,85 @@ class ReportService:
             if options.transaction_type is None and options.category_ids is None:
                 kpis = self.metrics_service.kpis(period)
             else:
-                stmt = select(
-                    func.coalesce(
-                        func.sum(
-                            case(
-                                (
-                                    Transaction.type == TransactionType.income,
-                                    Transaction.amount_cents,
-                                ),
-                                else_=0,
+                income = 0
+                expenses = 0
+
+                if options.transaction_type in (None, TransactionType.income):
+                    income_stmt = select(
+                        func.coalesce(
+                            func.sum(Transaction.amount_cents),
+                            0,
+                        ).label("income")
+                    ).where(
+                        Transaction.user_id == self.user_id,
+                        Transaction.deleted_at.is_(None),
+                        Transaction.type == TransactionType.income,
+                        Transaction.is_reimbursement.is_(False),
+                        Transaction.date.between(options.start, options.end),
+                    )
+                    if options.category_ids:
+                        income_stmt = income_stmt.where(
+                            Transaction.category_id.in_(options.category_ids)
+                        )
+                    income = int(self.session.execute(income_stmt).scalar_one() or 0)
+
+                if options.transaction_type in (None, TransactionType.expense):
+                    expense_stmt = select(
+                        func.coalesce(
+                            func.sum(Transaction.amount_cents),
+                            0,
+                        ).label("expenses")
+                    ).where(
+                        Transaction.user_id == self.user_id,
+                        Transaction.deleted_at.is_(None),
+                        Transaction.type == TransactionType.expense,
+                        Transaction.date.between(options.start, options.end),
+                    )
+                    if options.category_ids:
+                        expense_stmt = expense_stmt.where(
+                            Transaction.category_id.in_(options.category_ids)
+                        )
+                    expense_gross = int(
+                        self.session.execute(expense_stmt).scalar_one() or 0
+                    )
+
+                    ExpenseTxn = aliased(Transaction)
+                    ReimbursementTxn = aliased(Transaction)
+                    reimb_stmt = (
+                        select(
+                            func.coalesce(
+                                func.sum(ReimbursementAllocation.amount_cents), 0
                             )
-                        ),
-                        0,
-                    ).label("income"),
-                    func.coalesce(
-                        func.sum(
-                            case(
-                                (
-                                    Transaction.type == TransactionType.expense,
-                                    Transaction.amount_cents,
-                                ),
-                                else_=0,
-                            )
-                        ),
-                        0,
-                    ).label("expenses"),
-                ).where(
-                    Transaction.user_id == self.user_id,
-                    Transaction.deleted_at.is_(None),
-                    Transaction.date.between(options.start, options.end),
-                )
-                if options.transaction_type is not None:
-                    stmt = stmt.where(Transaction.type == options.transaction_type)
-                if options.category_ids:
-                    stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
-                row = self.session.execute(stmt).one()
-                income = int(row.income)
-                expenses = int(row.expenses)
+                        )
+                        .join(
+                            ExpenseTxn,
+                            ReimbursementAllocation.expense_transaction_id
+                            == ExpenseTxn.id,
+                        )
+                        .join(
+                            ReimbursementTxn,
+                            ReimbursementAllocation.reimbursement_transaction_id
+                            == ReimbursementTxn.id,
+                        )
+                        .where(
+                            ReimbursementAllocation.user_id == self.user_id,
+                            ExpenseTxn.user_id == self.user_id,
+                            ReimbursementTxn.user_id == self.user_id,
+                            ExpenseTxn.deleted_at.is_(None),
+                            ExpenseTxn.type == TransactionType.expense,
+                            ExpenseTxn.date.between(options.start, options.end),
+                            ReimbursementTxn.deleted_at.is_(None),
+                            ReimbursementTxn.type == TransactionType.income,
+                            ReimbursementTxn.is_reimbursement.is_(True),
+                        )
+                    )
+                    if options.category_ids:
+                        reimb_stmt = reimb_stmt.where(
+                            ExpenseTxn.category_id.in_(options.category_ids)
+                        )
+                    reimbursed = int(self.session.execute(reimb_stmt).scalar_one() or 0)
+                    expenses = max(0, expense_gross - reimbursed)
+
                 kpis = {
                     "income": income,
                     "expenses": expenses,
@@ -1897,22 +2785,95 @@ class ReportService:
                 if options.transaction_type is not None
                 else TransactionType.expense
             )
-            stmt = (
-                select(Transaction.date, func.sum(Transaction.amount_cents))
-                .where(
-                    Transaction.user_id == self.user_id,
-                    Transaction.deleted_at.is_(None),
-                    Transaction.type == trend_type,
-                    Transaction.date.between(options.start, options.end),
+            if trend_type == TransactionType.income:
+                stmt = (
+                    select(Transaction.date, func.sum(Transaction.amount_cents))
+                    .where(
+                        Transaction.user_id == self.user_id,
+                        Transaction.deleted_at.is_(None),
+                        Transaction.type == TransactionType.income,
+                        Transaction.is_reimbursement.is_(False),
+                        Transaction.date.between(options.start, options.end),
+                    )
+                    .group_by(Transaction.date)
+                    .order_by(Transaction.date)
                 )
-                .group_by(Transaction.date)
-                .order_by(Transaction.date)
-            )
-            if options.category_ids:
-                stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
-            rows = self.session.execute(stmt).all()
-            trend = [{"date": row[0], "amount_cents": row[1] or 0} for row in rows]
-            data["trend"] = trend
+                if options.category_ids:
+                    stmt = stmt.where(Transaction.category_id.in_(options.category_ids))
+                rows = self.session.execute(stmt).all()
+                data["trend"] = [
+                    {"date": row[0], "amount_cents": int(row[1] or 0)} for row in rows
+                ]
+            else:
+                gross_stmt = (
+                    select(
+                        Transaction.date,
+                        func.sum(Transaction.amount_cents).label("gross"),
+                    )
+                    .where(
+                        Transaction.user_id == self.user_id,
+                        Transaction.deleted_at.is_(None),
+                        Transaction.type == TransactionType.expense,
+                        Transaction.date.between(options.start, options.end),
+                    )
+                    .group_by(Transaction.date)
+                    .order_by(Transaction.date)
+                )
+                if options.category_ids:
+                    gross_stmt = gross_stmt.where(
+                        Transaction.category_id.in_(options.category_ids)
+                    )
+                gross_rows = self.session.execute(gross_stmt).all()
+                gross_map = {row[0]: int(row.gross or 0) for row in gross_rows}
+
+                ExpenseTxn = aliased(Transaction)
+                ReimbursementTxn = aliased(Transaction)
+                reimb_stmt = (
+                    select(
+                        ExpenseTxn.date,
+                        func.coalesce(
+                            func.sum(ReimbursementAllocation.amount_cents), 0
+                        ).label("reimbursed"),
+                    )
+                    .join(
+                        ExpenseTxn,
+                        ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+                    )
+                    .join(
+                        ReimbursementTxn,
+                        ReimbursementAllocation.reimbursement_transaction_id
+                        == ReimbursementTxn.id,
+                    )
+                    .where(
+                        ReimbursementAllocation.user_id == self.user_id,
+                        ExpenseTxn.user_id == self.user_id,
+                        ReimbursementTxn.user_id == self.user_id,
+                        ExpenseTxn.deleted_at.is_(None),
+                        ExpenseTxn.type == TransactionType.expense,
+                        ExpenseTxn.date.between(options.start, options.end),
+                        ReimbursementTxn.deleted_at.is_(None),
+                        ReimbursementTxn.type == TransactionType.income,
+                        ReimbursementTxn.is_reimbursement.is_(True),
+                    )
+                    .group_by(ExpenseTxn.date)
+                )
+                if options.category_ids:
+                    reimb_stmt = reimb_stmt.where(
+                        ExpenseTxn.category_id.in_(options.category_ids)
+                    )
+                reimb_rows = self.session.execute(reimb_stmt).all()
+                reimb_map = {row[0]: int(row.reimbursed or 0) for row in reimb_rows}
+
+                dates = sorted(set(gross_map.keys()) | set(reimb_map.keys()))
+                data["trend"] = [
+                    {
+                        "date": d,
+                        "amount_cents": max(
+                            0, gross_map.get(d, 0) - reimb_map.get(d, 0)
+                        ),
+                    }
+                    for d in dates
+                ]
 
         if "recent_transactions" in options.sections:
             sort_order = options.transactions_sort
@@ -2259,7 +3220,7 @@ class BudgetService:
     ) -> dict[Optional[int], int]:
         start = self._month_start(year, month)
         end = self._month_end(year, month)
-        stmt = (
+        gross_stmt = (
             select(
                 Transaction.category_id,
                 func.coalesce(func.sum(Transaction.amount_cents), 0).label("spent"),
@@ -2273,12 +3234,55 @@ class BudgetService:
             )
             .group_by(Transaction.category_id)
         )
-        spent_by_category = {
-            row.category_id: int(row.spent) for row in self.session.execute(stmt)
+        gross_by_category = {
+            row.category_id: int(row.spent or 0)
+            for row in self.session.execute(gross_stmt)
         }
-        total = sum(spent_by_category.values())
-        spent_by_category[None] = total
-        return spent_by_category
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        reimb_stmt = (
+            select(
+                ExpenseTxn.category_id,
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "reimbursed"
+                ),
+            )
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.date.between(start, end),
+                ~ExpenseTxn.tags.any(Tag.is_hidden_from_budget),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by(ExpenseTxn.category_id)
+        )
+        reimb_by_category = {
+            row.category_id: int(row.reimbursed or 0)
+            for row in self.session.execute(reimb_stmt)
+        }
+
+        net_by_category: dict[Optional[int], int] = {}
+        for category_id, gross in gross_by_category.items():
+            net_by_category[category_id] = max(
+                0, gross - reimb_by_category.get(category_id, 0)
+            )
+        net_by_category[None] = sum(net_by_category.values())
+        return net_by_category
 
     def progress_for_month(
         self, year: int, month: int
@@ -2325,7 +3329,7 @@ class BudgetService:
     def spent_by_category_for_year(self, year: int) -> dict[Optional[int], int]:
         start = date(year, 1, 1)
         end = date(year + 1, 1, 1) - date.resolution
-        stmt = (
+        gross_stmt = (
             select(
                 Transaction.category_id,
                 func.coalesce(func.sum(Transaction.amount_cents), 0).label("spent"),
@@ -2339,9 +3343,52 @@ class BudgetService:
             )
             .group_by(Transaction.category_id)
         )
-        spent_by_category = {
-            row.category_id: int(row.spent) for row in self.session.execute(stmt)
+        gross_by_category = {
+            row.category_id: int(row.spent or 0)
+            for row in self.session.execute(gross_stmt)
         }
-        total = sum(spent_by_category.values())
-        spent_by_category[None] = total
-        return spent_by_category
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        reimb_stmt = (
+            select(
+                ExpenseTxn.category_id,
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "reimbursed"
+                ),
+            )
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ExpenseTxn.user_id == self.user_id,
+                ReimbursementTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ExpenseTxn.date.between(start, end),
+                ~ExpenseTxn.tags.any(Tag.is_hidden_from_budget),
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by(ExpenseTxn.category_id)
+        )
+        reimb_by_category = {
+            row.category_id: int(row.reimbursed or 0)
+            for row in self.session.execute(reimb_stmt)
+        }
+
+        net_by_category: dict[Optional[int], int] = {}
+        for category_id, gross in gross_by_category.items():
+            net_by_category[category_id] = max(
+                0, gross - reimb_by_category.get(category_id, 0)
+            )
+        net_by_category[None] = sum(net_by_category.values())
+        return net_by_category

@@ -145,7 +145,7 @@ class RecurringEngine:
         return count
 
     def _post_occurrence(self, rule: RecurringRule, occurrence_date: date) -> bool:
-        from services import update_monthly_rollup
+        from services import recompute_monthly_rollup_for_date
         from fx_rates import FxRateService
 
         exists_stmt = (
@@ -199,12 +199,6 @@ class RecurringEngine:
             note=rule.name,
         )
         self.session.add(txn)
-        update_monthly_rollup(
-            self.session,
-            rule.user_id,
-            occurrence_date,
-            rule.type,
-            amount_eur_cents,
-            increment=True,
-        )
+        self.session.flush()
+        recompute_monthly_rollup_for_date(self.session, rule.user_id, occurrence_date)
         return True

@@ -58,6 +58,7 @@ class TransactionIn(BaseModel):
     date: date
     occurred_at: datetime
     type: TransactionType
+    is_reimbursement: Optional[bool] = None
     amount_cents: int = Field(..., ge=0)
     category_id: int
     note: str = Field(..., min_length=1, max_length=200)
@@ -110,6 +111,7 @@ class RecurringRuleIn(BaseModel):
 class CSVRow(BaseModel):
     date: date
     type: TransactionType
+    is_reimbursement: bool = False
     amount_cents: int
     category: str
     note: Optional[str]

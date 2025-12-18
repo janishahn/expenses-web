@@ -139,14 +139,20 @@
             {% set is_expense = txn.type.value == 'expense' %}
             <div class="card shadow-hover p-4 flex gap-4 items-start" id="txn-card-{{ txn.id }}">
                 <div class="flex-1 space-y-1">
-                    <div class="flex items-center gap-2">
-                        <p class="font-semibold text-slate-800 dark:text-slate-100">{{ txn.note or (txn.category.name if
-                            txn.category else "Untitled entry") }}</p>
-                        <span class="badge badge-muted text-xs">{{ txn.type.value|title }}</span>
-                        {% for tag in txn.tags %}
-                        <span class="badge badge-muted text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">{{ tag.name }}</span>
-                        {% endfor %}
-                    </div>
+	                    <div class="flex items-center gap-2">
+	                        <p class="font-semibold text-slate-800 dark:text-slate-100">{{ txn.note or (txn.category.name if
+	                            txn.category else "Untitled entry") }}</p>
+	                        <span class="badge badge-muted text-xs">
+	                            {% if txn.type.value == 'income' and txn.is_reimbursement %}
+	                            Reimbursement
+	                            {% else %}
+	                            {{ txn.type.value|title }}
+	                            {% endif %}
+	                        </span>
+	                        {% for tag in txn.tags %}
+	                        <span class="badge badge-muted text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">{{ tag.name }}</span>
+	                        {% endfor %}
+	                    </div>
                     <p class="text-sm text-slate-500 dark:text-slate-400">{{ txn.date|eurodate }} {{
                         txn.occurred_at.strftime('%H:%M') }} • {{ txn.category.name if txn.category else "Uncategorized"
                         }}</p>
@@ -196,13 +202,19 @@
                                 {% for tag in txn.tags %}
                                 <span class="ml-1 inline-flex items-center rounded-md bg-slate-50 dark:bg-slate-800 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 ring-1 ring-inset ring-slate-500/10">{{ tag.name }}</span>
                                 {% endfor %}
-                            </td>
-                            <td>{{ txn.category.name if txn.category else "Uncategorized" }}</td>
-                            <td>{{ txn.type.value|title }}</td>
-                            <td
-                                class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
-                                {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
-                            </td>
+	                            </td>
+	                            <td>{{ txn.category.name if txn.category else "Uncategorized" }}</td>
+	                            <td>
+	                                {% if txn.type.value == 'income' and txn.is_reimbursement %}
+	                                Reimbursement
+	                                {% else %}
+	                                {{ txn.type.value|title }}
+	                                {% endif %}
+	                            </td>
+	                            <td
+	                                class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+	                                {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
+	                            </td>
                             <td class="text-right">
                                 <div class="inline-flex items-center gap-1 justify-end">
                                     <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}"

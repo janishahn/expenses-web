@@ -178,12 +178,16 @@
                 {% for txn in recent_transactions %}
                 <tr>
                     <td class="cell-muted">{{ txn.occurred_at|eurodatetime }}</td>
-                    <td>
-                        <span
-                            class="pill {% if txn.type.value == 'income' %}pill-income{% else %}pill-expense{% endif %}">
-                            {{ txn.type.value }}
-                        </span>
-                    </td>
+	                    <td>
+	                        <span
+	                            class="pill {% if txn.type.value == 'income' %}pill-income{% else %}pill-expense{% endif %}">
+	                            {% if txn.type.value == 'income' and txn.is_reimbursement %}
+	                            reimbursement
+	                            {% else %}
+	                            {{ txn.type.value }}
+	                            {% endif %}
+	                        </span>
+	                    </td>
                     <td>{{ txn.category.name if txn.category else 'N/A' }}</td>
                     <td>{{ txn.note or '' }}</td>
                     <td class="cell-right {% if txn.type.value == 'income' %}positive{% else %}negative{% endif %}">

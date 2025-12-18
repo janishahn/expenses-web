@@ -33,7 +33,7 @@
                 </div>
             </div>
             <div class="kpi-caption flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
-                <span>Total money received</span>
+                <span>Total money received (excl. reimbursements)</span>
                 {% if deltas %}
                 <span class="pill kpi-delta" aria-hidden="true">
                     {% if deltas.income >= 0 %}+{% endif %}{{ deltas.income|currency }} € vs prev

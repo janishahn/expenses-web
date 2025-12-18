@@ -56,6 +56,7 @@ from services import (
     IngestService,
     InsightsService,
     MetricsService,
+    ReimbursementService,
     RecurringRuleService,
     TransactionFilters,
     TransactionService,
@@ -375,6 +376,7 @@ async def create_transaction(request: Request, db: Session = Depends(get_db)):
             date=txn_date,
             occurred_at=occurred_at,
             type=category.type,
+            is_reimbursement=(form.get("is_reimbursement") == "on"),
             amount_cents=parse_amount(form["amount"]),
             category_id=category_id,
             note=form["note"],
@@ -1683,6 +1685,138 @@ async def edit_transaction_submit(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return RedirectResponse(url=str(next_url), status_code=303)
+
+
+@app.post("/transactions/{transaction_id}/reimbursement")
+async def set_transaction_reimbursement(
+    transaction_id: int, request: Request, db: Session = Depends(get_db)
+):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    is_reimbursement = form.get("is_reimbursement") == "on"
+    try:
+        ReimbursementService(db).set_reimbursement(transaction_id, is_reimbursement)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    headers = {"HX-Trigger": "transactions-changed"}
+    if request.headers.get("HX-Request"):
+        return Response(status_code=204, headers=headers)
+    next_url = form.get("next") or request.app.url_path_for(
+        "edit_transaction_page", transaction_id=transaction_id
+    )
+    return RedirectResponse(url=str(next_url), status_code=303, headers=headers)
+
+
+@app.post("/reimbursements/{reimbursement_id}/allocate")
+async def allocate_reimbursement(
+    reimbursement_id: int, request: Request, db: Session = Depends(get_db)
+):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    try:
+        expense_id = int(form["expense_transaction_id"])
+        amount_cents = parse_amount(str(form["amount"]))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        ReimbursementService(db).upsert_allocation(
+            reimbursement_id, expense_id, amount_cents
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    headers = {"HX-Trigger": "transactions-changed"}
+    if request.headers.get("HX-Request"):
+        return Response(status_code=204, headers=headers)
+    next_url = form.get("next") or request.app.url_path_for(
+        "edit_transaction_page", transaction_id=reimbursement_id
+    )
+    return RedirectResponse(url=str(next_url), status_code=303, headers=headers)
+
+
+@app.post("/reimbursements/allocations/{allocation_id}/delete")
+async def delete_reimbursement_allocation(
+    allocation_id: int, request: Request, db: Session = Depends(get_db)
+):
+    form = await request.form()
+    if not validate_csrf_token(form.get("csrf_token", "")):
+        raise HTTPException(status_code=400, detail="Invalid CSRF token")
+    try:
+        ReimbursementService(db).delete_allocation(allocation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    headers = {"HX-Trigger": "transactions-changed"}
+    if request.headers.get("HX-Request"):
+        return Response(status_code=204, headers=headers)
+    next_url = (
+        form.get("next")
+        or request.headers.get("Referer")
+        or request.app.url_path_for("transactions_page")
+    )
+    return RedirectResponse(url=str(next_url), status_code=303, headers=headers)
+
+
+@app.get("/components/transaction-reimbursements", response_class=HTMLResponse)
+def component_transaction_reimbursements(
+    request: Request, db: Session = Depends(get_db)
+):
+    txn_raw = str(request.query_params.get("transaction_id") or "").strip()
+    if not txn_raw:
+        raise HTTPException(status_code=400, detail="Missing transaction_id")
+    try:
+        transaction_id = int(txn_raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid transaction_id") from exc
+    try:
+        txn = TransactionService(db).get(transaction_id, include_deleted=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    reimbursements = ReimbursementService(db)
+    context: dict[str, object] = {"transaction": txn}
+    if txn.type == TransactionType.income:
+        if txn.is_reimbursement:
+            allocated_total = reimbursements.allocated_total_for_reimbursement(txn.id)
+            context["allocated_total_cents"] = allocated_total
+            context["remaining_to_allocate_cents"] = max(
+                0, txn.amount_cents - allocated_total
+            )
+            context["allocations_out"] = reimbursements.allocations_for_reimbursement(
+                txn.id
+            )
+    else:
+        reimbursed_total = reimbursements.reimbursed_total_for_expense(txn.id)
+        context["reimbursed_total_cents"] = reimbursed_total
+        context["net_cost_cents"] = max(0, txn.amount_cents - reimbursed_total)
+        context["allocations_in"] = reimbursements.allocations_for_expense(txn.id)
+
+    return render(request, "components/transaction_reimbursements.html", context)
+
+
+@app.get("/components/reimbursement-expense-search", response_class=HTMLResponse)
+def component_reimbursement_expense_search(
+    request: Request, db: Session = Depends(get_db)
+):
+    reimb_raw = str(request.query_params.get("reimbursement_id") or "").strip()
+    if not reimb_raw:
+        raise HTTPException(status_code=400, detail="Missing reimbursement_id")
+    try:
+        reimbursement_id = int(reimb_raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid reimbursement_id") from exc
+    query = (request.query_params.get("q") or "").strip()
+    try:
+        results = ReimbursementService(db).search_expenses_for_reimbursement(
+            reimbursement_id, query=query, limit=25
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return render(
+        request,
+        "components/reimbursement_expense_search.html",
+        {"reimbursement_id": reimbursement_id, "query": query, "results": results},
+    )
 
 
 @app.get("/budgets", response_class=HTMLResponse)

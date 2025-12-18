@@ -128,6 +128,9 @@ class Transaction(Base, TimestampMixin):
     type: Mapped[TransactionType] = mapped_column(
         SAEnum(TransactionType), nullable=False
     )
+    is_reimbursement: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     source_currency_code: Mapped[Optional[CurrencyCode]] = mapped_column(
         CURRENCY_CODE_ENUM
@@ -156,6 +159,20 @@ class Transaction(Base, TimestampMixin):
     tags: Mapped[list["Tag"]] = relationship(
         "Tag", secondary="transaction_tags", back_populates="transactions"
     )
+    reimbursement_allocations_out: Mapped[list["ReimbursementAllocation"]] = (
+        relationship(
+            "ReimbursementAllocation",
+            foreign_keys="ReimbursementAllocation.reimbursement_transaction_id",
+            back_populates="reimbursement_transaction",
+        )
+    )
+    reimbursement_allocations_in: Mapped[list["ReimbursementAllocation"]] = (
+        relationship(
+            "ReimbursementAllocation",
+            foreign_keys="ReimbursementAllocation.expense_transaction_id",
+            back_populates="expense_transaction",
+        )
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -167,6 +184,12 @@ class Transaction(Base, TimestampMixin):
         Index("ix_transactions_user_date", "user_id", "date"),
         Index("ix_transactions_user_category_date", "user_id", "category_id", "date"),
         Index("ix_transactions_user_type_date", "user_id", "type", "date"),
+        Index(
+            "ix_transactions_user_is_reimbursement_date",
+            "user_id",
+            "is_reimbursement",
+            "date",
+        ),
         CheckConstraint("amount_cents >= 0", name="ck_transactions_amount_positive"),
     )
 
@@ -212,6 +235,50 @@ class RecurringRule(Base, TimestampMixin):
     __table_args__ = (
         CheckConstraint("interval_count > 0", name="ck_rule_interval_positive"),
         CheckConstraint("amount_cents >= 0", name="ck_rule_amount_positive"),
+    )
+
+
+class ReimbursementAllocation(Base, TimestampMixin):
+    __tablename__ = "reimbursement_allocations"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "reimbursement_transaction_id",
+            "expense_transaction_id",
+            name="uq_reimbursement_allocation_pair",
+        ),
+        Index(
+            "ix_reimbursement_allocations_user_reimbursement",
+            "user_id",
+            "reimbursement_transaction_id",
+        ),
+        Index(
+            "ix_reimbursement_allocations_user_expense",
+            "user_id",
+            "expense_transaction_id",
+        ),
+        CheckConstraint("amount_cents >= 0", name="ck_reimbursement_allocation_amount"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    reimbursement_transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
+    expense_transaction_id: Mapped[int] = mapped_column(
+        ForeignKey("transactions.id", ondelete="CASCADE"), nullable=False
+    )
+    amount_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    reimbursement_transaction: Mapped["Transaction"] = relationship(
+        "Transaction",
+        foreign_keys=[reimbursement_transaction_id],
+        back_populates="reimbursement_allocations_out",
+    )
+    expense_transaction: Mapped["Transaction"] = relationship(
+        "Transaction",
+        foreign_keys=[expense_transaction_id],
+        back_populates="reimbursement_allocations_in",
     )
 
 
