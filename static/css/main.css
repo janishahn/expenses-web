@@ -893,6 +893,12 @@ dialog::backdrop {
   transform: translateX(-50%) scale(1);
 }
 
+@media (hover: none) and (pointer: coarse) {
+  [data-tooltip]::after {
+    display: none;
+  }
+}
+
 .htmx-indicator {
   display: none;
 }
