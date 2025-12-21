@@ -25,7 +25,13 @@
                     <td class="font-medium text-slate-800 dark:text-slate-100">{{ txn.note }}</td>
                     <td>{{ txn.category.name }}</td>
                     <td class="text-right font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
-                        {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
+                        {% set display_amount_cents = txn.net_amount_cents if is_expense else txn.amount_cents %}
+                        <div class="flex flex-col items-end gap-1">
+                            <div>{% if is_expense %}-{% else %}+{% endif %}{{ display_amount_cents|currency }} €</div>
+                            {% if is_expense and txn.reimbursed_total_cents > 0 %}
+                            <span class="badge badge-reimbursed text-xs">Reimbursed {{ txn.reimbursed_total_cents|currency }} €</span>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -40,4 +46,3 @@
         {% endif %}
     </div>
 </div>
-

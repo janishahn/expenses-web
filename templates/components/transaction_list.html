@@ -18,7 +18,7 @@
                     <p class="font-semibold text-slate-800 dark:text-slate-100">
                         {{ txn.note or (txn.category.name if txn.category else "Untitled") }}
                         {% if txn.type.value == 'income' and txn.is_reimbursement %}
-                        <span class="ml-1 inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-950 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-900">Reimbursement</span>
+                        <span class="ml-1 inline-flex items-center rounded-full txn-reimb-pill">Reimbursement</span>
                         {% endif %}
                         {% for tag in txn.tags %}
                         <span class="ml-1 inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">{{ tag.name }}</span>
@@ -30,11 +30,16 @@
                 </div>
                 <div class="text-right">
                     {% set is_expense = txn.type.value == 'expense' %}
-                    <p
-                        class="tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
-                        {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
+                    {% set display_amount_cents = txn.net_amount_cents if is_expense else txn.amount_cents %}
+                    <p class="tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                        {% if is_expense %}-{% else %}+{% endif %}{{ display_amount_cents|currency }} €
                     </p>
-                    <p class="text-xs text-slate-500">{{ txn.type.value|title }}</p>
+                    <p class="text-xs text-slate-500 whitespace-nowrap text-right">
+                        {% if is_expense and txn.reimbursed_total_cents > 0 %}
+                        <span class="txn-reimb-inline">Reimb {{ txn.reimbursed_total_cents|currency }} € · </span>
+                        {% endif %}
+                        {{ txn.type.value|title }}
+                    </p>
                 </div>
             </li>
             {% endfor %}

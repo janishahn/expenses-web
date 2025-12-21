@@ -9,6 +9,7 @@ from periods import Period
 from schemas import TransactionIn
 from services import (
     BudgetService,
+    InsightsService,
     MetricsService,
     ReimbursementService,
     TransactionService,
@@ -212,3 +213,48 @@ def test_deleting_expense_frees_reimbursement_amount() -> None:
 
     reimb.upsert_allocation(payback.id, second.id, 6_000)
     assert reimb.allocated_total_for_reimbursement(payback.id) == 6_000
+
+
+def test_top_tags_use_net_expense() -> None:
+    session = make_session()
+    income = Category(name="Income", type=TransactionType.income, order=0)
+    food = Category(name="Food", type=TransactionType.expense, order=0)
+    session.add_all([income, food])
+    session.commit()
+    session.refresh(income)
+    session.refresh(food)
+
+    txns = TransactionService(session)
+    reimb = ReimbursementService(session)
+
+    dinner = txns.create(
+        TransactionIn(
+            date=date(2025, 7, 1),
+            occurred_at=datetime(2025, 7, 1, 20, 0),
+            type=TransactionType.expense,
+            amount_cents=20_000,
+            category_id=food.id,
+            note="Dinner",
+            tags=["group"],
+        )
+    )
+    payback = txns.create(
+        TransactionIn(
+            date=date(2025, 7, 2),
+            occurred_at=datetime(2025, 7, 2, 10, 0),
+            type=TransactionType.income,
+            is_reimbursement=True,
+            amount_cents=10_000,
+            category_id=income.id,
+            note="Payback",
+        )
+    )
+    reimb.upsert_allocation(payback.id, dinner.id, 10_000)
+
+    july = Period("july", date(2025, 7, 1), date(2025, 7, 31))
+    top = InsightsService(session).top_tags(
+        july, transaction_type=TransactionType.expense
+    )
+    assert top
+    assert top[0]["name"] == "group"
+    assert top[0]["amount_cents"] == 10_000

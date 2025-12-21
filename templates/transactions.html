@@ -158,9 +158,13 @@
                         }}</p>
                 </div>
                 <div class="text-right">
+                    {% set display_amount_cents = txn.net_amount_cents if is_expense else txn.amount_cents %}
                     <p
-                        class="tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
-                        {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
+                        class="tabular font-semibold whitespace-nowrap {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                        {% if is_expense %}-{% else %}+{% endif %}{{ display_amount_cents|currency }} €
+                        {% if is_expense and txn.reimbursed_total_cents > 0 %}
+                        <span class="txn-reimb-inline">Reimb {{ txn.reimbursed_total_cents|currency }} € · </span>
+                        {% endif %}
                     </p>
                     <div class="mt-2 inline-flex items-center gap-1">
                         <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon"
@@ -211,9 +215,14 @@
 	                                {{ txn.type.value|title }}
 	                                {% endif %}
 	                            </td>
-	                            <td
-	                                class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
-	                                {% if is_expense %}-{% else %}+{% endif %}{{ txn.amount_cents|currency }} €
+	                            <td class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+	                                {% set display_amount_cents = txn.net_amount_cents if is_expense else txn.amount_cents %}
+	                                <span class="whitespace-nowrap">
+	                                    {% if is_expense %}-{% else %}+{% endif %}{{ display_amount_cents|currency }} €
+	                                    {% if is_expense and txn.reimbursed_total_cents > 0 %}
+	                                    <span class="txn-reimb-inline">Reimb {{ txn.reimbursed_total_cents|currency }} € · </span>
+	                                    {% endif %}
+	                                </span>
 	                            </td>
                             <td class="text-right">
                                 <div class="inline-flex items-center gap-1 justify-end">

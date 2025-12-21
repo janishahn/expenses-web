@@ -774,7 +774,25 @@ class TransactionService:
             )
         if filters.tag_id:
             stmt = stmt.join(Transaction.tags).where(Tag.id == filters.tag_id)
-        return self.session.scalars(stmt).unique().all()
+        transactions = self.session.scalars(stmt).unique().all()
+        if transactions:
+            expense_ids = [
+                txn.id for txn in transactions if txn.type == TransactionType.expense
+            ]
+            reimbursed_by_expense = ReimbursementService(
+                self.session, self.user_id
+            ).reimbursed_totals_for_expenses(expense_ids)
+            for txn in transactions:
+                gross = int(txn.amount_cents)
+                setattr(txn, "gross_amount_cents", gross)
+                if txn.type == TransactionType.expense:
+                    reimbursed = int(reimbursed_by_expense.get(txn.id, 0))
+                    setattr(txn, "reimbursed_total_cents", reimbursed)
+                    setattr(txn, "net_amount_cents", max(0, gross - reimbursed))
+                else:
+                    setattr(txn, "reimbursed_total_cents", 0)
+                    setattr(txn, "net_amount_cents", gross)
+        return transactions
 
     def all_for_period(
         self, period: Period, filters: Optional[TransactionFilters] = None
@@ -813,7 +831,25 @@ class TransactionService:
             .order_by(Transaction.occurred_at.desc(), Transaction.id.desc())
             .limit(limit)
         )
-        return self.session.scalars(stmt).all()
+        transactions = self.session.scalars(stmt).all()
+        if transactions:
+            expense_ids = [
+                txn.id for txn in transactions if txn.type == TransactionType.expense
+            ]
+            reimbursed_by_expense = ReimbursementService(
+                self.session, self.user_id
+            ).reimbursed_totals_for_expenses(expense_ids)
+            for txn in transactions:
+                gross = int(txn.amount_cents)
+                setattr(txn, "gross_amount_cents", gross)
+                if txn.type == TransactionType.expense:
+                    reimbursed = int(reimbursed_by_expense.get(txn.id, 0))
+                    setattr(txn, "reimbursed_total_cents", reimbursed)
+                    setattr(txn, "net_amount_cents", max(0, gross - reimbursed))
+                else:
+                    setattr(txn, "reimbursed_total_cents", 0)
+                    setattr(txn, "net_amount_cents", gross)
+        return transactions
 
     def soft_delete(self, transaction_id: int) -> None:
         txn = self.session.get(Transaction, transaction_id)
@@ -980,6 +1016,47 @@ class ReimbursementService:
             ).scalar_one()
             or 0
         )
+
+    def reimbursed_totals_for_expenses(
+        self, expense_transaction_ids: list[int]
+    ) -> dict[int, int]:
+        if not expense_transaction_ids:
+            return {}
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        rows = self.session.execute(
+            select(
+                ReimbursementAllocation.expense_transaction_id.label("expense_id"),
+                func.coalesce(func.sum(ReimbursementAllocation.amount_cents), 0).label(
+                    "total"
+                ),
+            )
+            .join(
+                ExpenseTxn,
+                ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+            )
+            .join(
+                ReimbursementTxn,
+                ReimbursementAllocation.reimbursement_transaction_id
+                == ReimbursementTxn.id,
+            )
+            .where(
+                ReimbursementAllocation.user_id == self.user_id,
+                ReimbursementAllocation.expense_transaction_id.in_(
+                    expense_transaction_ids
+                ),
+                ExpenseTxn.user_id == self.user_id,
+                ExpenseTxn.deleted_at.is_(None),
+                ExpenseTxn.type == TransactionType.expense,
+                ReimbursementTxn.user_id == self.user_id,
+                ReimbursementTxn.deleted_at.is_(None),
+                ReimbursementTxn.type == TransactionType.income,
+                ReimbursementTxn.is_reimbursement.is_(True),
+            )
+            .group_by(ReimbursementAllocation.expense_transaction_id)
+        ).all()
+        return {int(r.expense_id): int(r.total or 0) for r in rows}
 
     def allocations_for_reimbursement(
         self, reimbursement_transaction_id: int
@@ -2174,30 +2251,109 @@ class InsightsService:
         transaction_type: TransactionType = TransactionType.expense,
         limit: int = 12,
     ) -> list[dict[str, object]]:
-        stmt = (
+        if transaction_type == TransactionType.income:
+            stmt = (
+                select(
+                    Tag.id.label("tag_id"),
+                    Tag.name.label("tag_name"),
+                    func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
+                )
+                .select_from(Transaction)
+                .join(Transaction.tags)
+                .where(
+                    Transaction.user_id == self.user_id,
+                    Transaction.deleted_at.is_(None),
+                    Transaction.type == TransactionType.income,
+                    Transaction.is_reimbursement.is_(False),
+                    Transaction.date.between(period.start, period.end),
+                )
+                .group_by(Tag.id, Tag.name)
+                .order_by(func.sum(Transaction.amount_cents).desc())
+                .limit(limit)
+            )
+            return [
+                {
+                    "id": int(r.tag_id),
+                    "name": str(r.tag_name),
+                    "amount_cents": int(r.total),
+                }
+                for r in self.session.execute(stmt)
+            ]
+
+        gross_rows = self.session.execute(
             select(
                 Tag.id.label("tag_id"),
                 Tag.name.label("tag_name"),
-                func.coalesce(func.sum(Transaction.amount_cents), 0).label("total"),
+                func.coalesce(func.sum(Transaction.amount_cents), 0).label("gross"),
             )
             .select_from(Transaction)
             .join(Transaction.tags)
             .where(
                 Transaction.user_id == self.user_id,
                 Transaction.deleted_at.is_(None),
-                Transaction.type == transaction_type,
+                Transaction.type == TransactionType.expense,
                 Transaction.date.between(period.start, period.end),
             )
             .group_by(Tag.id, Tag.name)
-            .order_by(func.sum(Transaction.amount_cents).desc())
-            .limit(limit)
-        )
-        if transaction_type == TransactionType.income:
-            stmt = stmt.where(Transaction.is_reimbursement.is_(False))
-        return [
-            {"id": int(r.tag_id), "name": str(r.tag_name), "amount_cents": int(r.total)}
-            for r in self.session.execute(stmt)
-        ]
+        ).all()
+        if not gross_rows:
+            return []
+
+        ExpenseTxn = aliased(Transaction)
+        ReimbursementTxn = aliased(Transaction)
+        reimb_by_tag = {
+            int(r.tag_id): int(r.reimbursed or 0)
+            for r in self.session.execute(
+                select(
+                    Tag.id.label("tag_id"),
+                    func.coalesce(
+                        func.sum(ReimbursementAllocation.amount_cents), 0
+                    ).label("reimbursed"),
+                )
+                .select_from(ReimbursementAllocation)
+                .join(
+                    ExpenseTxn,
+                    ReimbursementAllocation.expense_transaction_id == ExpenseTxn.id,
+                )
+                .join(
+                    transaction_tags,
+                    transaction_tags.c.transaction_id == ExpenseTxn.id,
+                )
+                .join(Tag, Tag.id == transaction_tags.c.tag_id)
+                .join(
+                    ReimbursementTxn,
+                    ReimbursementAllocation.reimbursement_transaction_id
+                    == ReimbursementTxn.id,
+                )
+                .where(
+                    ReimbursementAllocation.user_id == self.user_id,
+                    ExpenseTxn.user_id == self.user_id,
+                    ExpenseTxn.deleted_at.is_(None),
+                    ExpenseTxn.type == TransactionType.expense,
+                    ExpenseTxn.date.between(period.start, period.end),
+                    Tag.user_id == self.user_id,
+                    ReimbursementTxn.user_id == self.user_id,
+                    ReimbursementTxn.deleted_at.is_(None),
+                    ReimbursementTxn.type == TransactionType.income,
+                    ReimbursementTxn.is_reimbursement.is_(True),
+                )
+                .group_by(Tag.id)
+            )
+        }
+
+        out = []
+        for row in gross_rows:
+            gross = int(row.gross or 0)
+            reimbursed = int(reimb_by_tag.get(int(row.tag_id), 0))
+            out.append(
+                {
+                    "id": int(row.tag_id),
+                    "name": str(row.tag_name),
+                    "amount_cents": max(0, gross - reimbursed),
+                }
+            )
+        out.sort(key=lambda r: int(r["amount_cents"]), reverse=True)
+        return out[:limit]
 
     def category_trend(
         self,
