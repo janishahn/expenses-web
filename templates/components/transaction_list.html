@@ -36,7 +36,7 @@
                     </p>
                     <p class="text-xs text-slate-500 whitespace-nowrap text-right">
                         {% if is_expense and txn.reimbursed_total_cents > 0 %}
-                        <span class="txn-reimb-inline">Reimb {{ txn.reimbursed_total_cents|currency }} € · </span>
+                        <span class="txn-reimb-inline">Reimb {{ txn.reimbursed_total_cents|currency }} €</span>
                         {% endif %}
                         {{ txn.type.value|title }}
                     </p>

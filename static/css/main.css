@@ -417,12 +417,22 @@ a:hover {
 }
 
 .txn-reimb-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.45rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.14);
   color: #047857;
   font-weight: 600;
-  font-size: 0.72em;
+  font-size: 0.7em;
 }
 
 .dark .txn-reimb-inline {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.2);
   color: #6ee7b7;
 }
 
