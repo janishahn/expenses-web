@@ -1,0 +1,129 @@
+{% from "macros.html" import icon %}
+{% if transactions %}
+<div class="space-y-6">
+    <div class="lg:hidden space-y-3">
+        {% for txn in transactions %}
+        {% set is_expense = txn.type.value == 'expense' %}
+        <div class="card shadow-hover p-4 flex gap-4 items-start" id="txn-card-{{ txn.id }}">
+            <div class="flex-1 space-y-1">
+                <div class="flex items-center gap-2">
+                    <p class="font-semibold text-slate-800 dark:text-slate-100">{{ txn.note or (txn.category.name if
+                        txn.category else "Untitled entry") }}</p>
+                    <span class="badge badge-muted text-xs">
+                        {% if txn.type.value == 'income' and txn.is_reimbursement %}
+                        Reimbursement
+                        {% else %}
+                        {{ txn.type.value|title }}
+                        {% endif %}
+                    </span>
+                    {% for tag in txn.tags %}
+                    <span class="badge badge-muted text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">{{ tag.name }}</span>
+                    {% endfor %}
+                </div>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ txn.date|eurodate }} {{
+                    txn.occurred_at.strftime('%H:%M') }} • {{ txn.category.name if txn.category else "Uncategorized"
+                    }}</p>
+            </div>
+            <div class="text-right">
+                {% set display_amount_cents = txn.net_amount_cents if is_expense else txn.amount_cents %}
+                <p
+                    class="tabular font-semibold whitespace-nowrap {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                    <span class="txn-amount-stack">
+                        {% if is_expense and txn.reimbursed_total_cents > 0 %}
+                        <span class="txn-reimb-inline">Reimb {{ txn.reimbursed_total_cents|currency }} €</span>
+                        {% endif %}
+                        <span>{% if is_expense %}-{% else %}+{% endif %}{{ display_amount_cents|currency }} €</span>
+                    </span>
+                </p>
+                <div class="mt-2 inline-flex items-center gap-1">
+                    <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}" class="btn btn-ghost btn-icon"
+                        data-tooltip="Edit entry">
+                        {{ icon("pencil", class="icon") }}
+                    </a>
+                    <button type="button" class="btn btn-ghost btn-icon" data-tooltip="Delete entry"
+                        hx-post="/transactions/{{ txn.id }}/delete" hx-vals='{"csrf_token": "{{ csrf_token() }}"}'
+                        hx-target="#txn-card-{{ txn.id }}" hx-swap="outerHTML"
+                        hx-confirm="Delete this transaction?">
+                        {{ icon("trash-2", class="icon") }}
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="hidden lg:block card shadow-hover">
+        <div class="card-body p-0">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Note</th>
+                        <th>Category</th>
+                        <th>Type</th>
+                        <th class="text-right">Amount</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for txn in transactions %}
+                    {% set is_expense = txn.type.value == 'expense' %}
+                    <tr id="txn-row-{{ txn.id }}">
+                        <td>{{ txn.date|eurodate }} {{ txn.occurred_at.strftime('%H:%M') }}</td>
+                        <td class="font-medium text-slate-800 dark:text-slate-100">
+                            {{ txn.note or "Untitled entry" }}
+                            {% for tag in txn.tags %}
+                            <span class="ml-1 inline-flex items-center rounded-md bg-slate-50 dark:bg-slate-800 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 ring-1 ring-inset ring-slate-500/10">{{ tag.name }}</span>
+                            {% endfor %}
+                        </td>
+                        <td>{{ txn.category.name if txn.category else "Uncategorized" }}</td>
+                        <td>
+                            {% if txn.type.value == 'income' and txn.is_reimbursement %}
+                            Reimbursement
+                            {% else %}
+                            {{ txn.type.value|title }}
+                            {% endif %}
+                        </td>
+                        <td class="text-right tabular font-semibold {% if is_expense %}text-rose-500{% else %}text-emerald-500{% endif %}">
+                            {% set display_amount_cents = txn.net_amount_cents if is_expense else txn.amount_cents %}
+                            <span class="whitespace-nowrap">
+                                <span class="txn-amount-stack">
+                                    {% if is_expense and txn.reimbursed_total_cents > 0 %}
+                                    <span class="txn-reimb-inline">Reimb {{ txn.reimbursed_total_cents|currency }} €</span>
+                                    {% endif %}
+                                    <span>{% if is_expense %}-{% else %}+{% endif %}{{ display_amount_cents|currency }} €</span>
+                                </span>
+                            </span>
+                        </td>
+                        <td class="text-right">
+                            <div class="inline-flex items-center gap-1 justify-end">
+                                <a href="/transactions/{{ txn.id }}/edit?next={{ next_q }}"
+                                    class="btn btn-ghost btn-icon" data-tooltip="Edit entry">
+                                    {{ icon("pencil", class="icon") }}
+                                </a>
+                                <button type="button" class="btn btn-ghost btn-icon" data-tooltip="Delete entry"
+                                    hx-post="/transactions/{{ txn.id }}/delete"
+                                    hx-vals='{"csrf_token": "{{ csrf_token() }}"}' hx-target="#txn-row-{{ txn.id }}"
+                                    hx-swap="outerHTML" hx-confirm="Delete this transaction?">
+                                    {{ icon("trash-2", class="icon") }}
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card shadow-hover text-center space-y-4 p-10">
+    {{ icon("receipt-text", class="mx-auto icon") }}
+    <h2 class="text-2xl font-semibold text-slate-800 dark:text-slate-100">You haven't tracked anything yet</h2>
+    <p class="text-slate-500 dark:text-slate-400">Add your first transaction or import a CSV to get going.</p>
+    <div class="flex flex-wrap gap-3 justify-center">
+        <a href="/" class="btn btn-primary">Add transaction</a>
+        <a href="/admin/import" class="btn btn-secondary">Import</a>
+    </div>
+</div>
+{% endif %}

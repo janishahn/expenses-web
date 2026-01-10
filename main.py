@@ -1757,6 +1757,43 @@ async def delete_reimbursement_allocation(
     return RedirectResponse(url=str(next_url), status_code=303, headers=headers)
 
 
+@app.get("/components/transactions-page-list", response_class=HTMLResponse)
+def component_transactions_page_list(request: Request, db: Session = Depends(get_db)):
+    period = period_from_request(request)
+    filters = filters_from_request(request)
+    page = int(request.query_params.get("page", "1"))
+    page = max(page, 1)
+    limit = 25
+    txn_service = TransactionService(db)
+    offset = (page - 1) * limit
+    items = txn_service.list(period, filters, limit=limit + 1, offset=offset)
+    items = items[:limit]
+    from urllib.parse import urlencode, quote
+
+    filter_params: dict[str, str] = {}
+    if filters.type:
+        filter_params["type"] = filters.type.value
+    if filters.category_id:
+        filter_params["category"] = str(filters.category_id)
+    if filters.tag_id:
+        filter_params["tag"] = str(filters.tag_id)
+    if filters.query:
+        filter_params["q"] = filters.query
+    filter_query = urlencode(filter_params)
+    period_query = f"period={period.slug}&start={period.start}&end={period.end}"
+    next_q = quote(str(request.url), safe="")
+    return render(
+        request,
+        "components/transactions_page_list.html",
+        {
+            "transactions": items,
+            "period_query": period_query,
+            "filter_query": filter_query,
+            "next_q": next_q,
+        },
+    )
+
+
 @app.get("/components/transaction-reimbursements", response_class=HTMLResponse)
 def component_transaction_reimbursements(
     request: Request, db: Session = Depends(get_db)
