@@ -2099,6 +2099,7 @@ class MetricsService:
             total += net
             breakdown.append({"name": row.name, "amount_cents": net, "percent": 0})
         breakdown.sort(key=lambda r: int(r["amount_cents"]), reverse=True)
+        breakdown = breakdown[:8]
         for item in breakdown:
             amount = int(item["amount_cents"])
             item["percent"] = (amount / total * 100) if total else 0

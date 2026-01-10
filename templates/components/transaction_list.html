@@ -7,7 +7,7 @@
             <p class="metric-eyebrow">Activity</p>
             <h3 class="text-xl font-semibold tracking-tight text-slate-800 dark:text-slate-100">Recent Transactions</h3>
         </div>
-        <a href="/transactions" class="btn btn-secondary btn-sm">View all</a>
+        <a href="/transactions" hx-boost="false" class="btn btn-secondary btn-sm">View all</a>
     </div>
     <div class="card-body p-0">
         {% if transactions %}
